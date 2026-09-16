@@ -32,9 +32,8 @@ render + wait, OTIO/EDL/FCPXML export, project export).
 
 ## Next
 
-- **Composite edit operations the API lacks natively**: move / trim / split an
-  item (delete + re-append preserving grade via CopyGrades and Fusion comps
-  via export/import), retime, ripple insert at playhead.
+- **More composite edit operations**: `relocate` (move/trim) and `split` exist;
+  next are retime, ripple insert at playhead, and moving linked A/V together.
 - **Recipes**: one POST that runs a whole pipeline (import -> assemble ->
   title -> grade -> render) with a dry-run plan; a `dollygrip run recipe.yaml`
   CLI.
@@ -43,8 +42,8 @@ render + wait, OTIO/EDL/FCPXML export, project export).
 - **Fusion depth**: macro/template parameter discovery (`GetInputList` with
   control metadata), comp import from `.setting` files with parameter
   overrides, expression setting.
-- **MCP ergonomics**: curated tool profiles (`--profile editor|colorist|
-  delivery`) to keep agent context small; resources for the OpenAPI doc.
+- **MCP ergonomics**: profiles exist (`--profile editor|colorist|motion|delivery|core`);
+  next: MCP resources for the OpenAPI doc and gotchas so agents can self-serve.
 - **Cloud projects** (`CreateCloudProject` & co.) - unverified, needs a
   Blackmagic Cloud account.
 - **v2 contract pass**: consistent `{ok, data}` envelopes once v1 usage

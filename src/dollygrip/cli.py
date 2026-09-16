@@ -28,7 +28,8 @@ def main(argv=None) -> int:
 
     mcp = sub.add_parser("mcp", help="Run as an MCP server over stdio (for Claude Code, Claude Desktop, Cursor...)")
     mcp.add_argument("--allow-exec", action="store_true", help="Expose the exec_code tool (raw Python in Resolve)")
-    mcp.add_argument("--tags", default=None, help="Comma-separated OpenAPI tags to expose, e.g. 'timelines,timeline items,render'")
+    mcp.add_argument("--profile", default="all", help="Curated tool set: all, editor, colorist, motion, delivery, core (default: all)")
+    mcp.add_argument("--tags", default=None, help="Comma-separated OpenAPI tags to expose (overrides --profile), e.g. 'timelines,timeline items,render'")
     mcp.add_argument("--exclude-tags", default=None, help="Comma-separated tags to hide")
 
     args = parser.parse_args(argv)
@@ -62,12 +63,18 @@ def _serve(args) -> int:
 
 
 def _mcp(args) -> int:
-    from .mcp_server import serve_stdio
+    from .mcp_server import PROFILES, serve_stdio
     from .server import Settings, create_app
 
     split = lambda v: [t.strip() for t in v.split(",") if t.strip()] if v else None  # noqa: E731
+    if args.profile not in PROFILES:
+        print(f"unknown profile {args.profile!r}; choose from {', '.join(PROFILES)}", file=sys.stderr)
+        return 2
+    include = split(args.tags) or PROFILES[args.profile]
+    if include is not None and args.allow_exec and "exec" not in include:
+        include = include + ["exec"]
     app = create_app(Settings(allow_exec=args.allow_exec))
-    serve_stdio(app, include_tags=split(args.tags), exclude_tags=split(args.exclude_tags))
+    serve_stdio(app, include_tags=include, exclude_tags=split(args.exclude_tags))
     return 0
 
 

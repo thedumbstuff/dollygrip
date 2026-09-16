@@ -70,6 +70,9 @@ can; the rest you need to know when you reach for `/exec` or extend the API.
   `startFrame`/`endFrame` uses the media pool clip's mark in/out if one is
   set (a 180-frame clip marked 10..100 landed as 91 frames). Clear the marks
   (`DELETE /mediapool/clips/{ref}/mark-in-out`) or pass explicit frames.
+- **`endFrame` is EXCLUSIVE.** `AppendToTimeline` with `startFrame: 0, endFrame: 44`
+  lands 44 frames, and `TimelineItem.GetSourceEndFrame()` returns
+  `source start + duration`. Think half-open ranges `[start, end)`.
 - **`resolve.*` constants are not enumerable.** `dir(resolve)` lists none of
   the `EXPORT_*`, `MARKER_*`, ... enums, but `getattr` works (values are
   floats). `GET /system/constants` probes the documented names for you.

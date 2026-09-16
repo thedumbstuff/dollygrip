@@ -1096,7 +1096,7 @@ class FakeTimeline(Markable):
             track = self.tracks[kind][track_index - 1]
             s, e = info.get("startFrame", 0), info.get("endFrame")
             frames = int(mpi.GetClipProperty("Frames") or 240) if mpi else 120
-            duration = (int(e) - int(s) + 1) if e is not None else frames - int(s)
+            duration = (int(e) - int(s)) if e is not None else frames - int(s)  # endFrame is EXCLUSIVE (live-verified)
             record = info.get("recordFrame")
             start = int(record) if record is not None else max([it.GetEnd() for it in track["items"]] + [self.START])
             item = FakeTimelineItem(mpi.GetName() if mpi else "item", start, duration, kind, track_index, mpi, self, int(s))
@@ -1371,9 +1371,9 @@ class FakeProject:
         self.pool = FakeMediaPool(root, self)
         # seed the timeline: spokes on V1, art on V2, music on A1
         tl = self.current_timeline
-        tl._append({"mediaPoolItem": spokes, "startFrame": 0, "endFrame": 239, "recordFrame": tl.START, "mediaType": 1})
-        tl._append({"mediaPoolItem": art, "trackIndex": 2, "startFrame": 0, "endFrame": 59, "recordFrame": tl.START + 30, "mediaType": 1})
-        tl._append({"mediaPoolItem": root.clips[0], "startFrame": 0, "endFrame": 239, "recordFrame": tl.START, "mediaType": 2})
+        tl._append({"mediaPoolItem": spokes, "startFrame": 0, "endFrame": 240, "recordFrame": tl.START, "mediaType": 1})
+        tl._append({"mediaPoolItem": art, "trackIndex": 2, "startFrame": 0, "endFrame": 60, "recordFrame": tl.START + 30, "mediaType": 1})
+        tl._append({"mediaPoolItem": root.clips[0], "startFrame": 0, "endFrame": 240, "recordFrame": tl.START, "mediaType": 2})
         self.jobs = {}
         self._job_seq = 0
         self.render_presets = ["YouTube 1080p", "H.264 Master"]

@@ -90,3 +90,47 @@ def test_item_markers(client, timeline):
     assert client.get(f"{ITEMS}/{iid}/markers").json()["markers"][0]["color"] == "Cyan"
     assert client.delete(f"{ITEMS}/{iid}/markers", params={"frame": 10}).json()["markers"] == []
     assert client.post(f"{ITEMS}/nope/markers", json={"frame": 1}).status_code == 404
+
+
+def test_relocate_moves_and_trims(client, timeline):
+    ids = item_ids(client, "video")
+    client.patch(f"{ITEMS}/{ids[1]}", json={"name": "art-renamed", "properties": {"Opacity": 40.0}})
+    client.post(f"{ITEMS}/{ids[1]}/markers", json={"frame": 5, "color": "Pink", "name": "m"})
+    old = timeline.tracks["video"][1]["items"][0]
+    old.AddFusionComp()
+    r = client.post(f"{ITEMS}/{ids[1]}/relocate", json={"record_frame": 200, "track_index": 3, "start_frame": 10, "end_frame": 40})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["grade_copied"] is True and body["fusion_comps_restored"] == 1 and body["note"] is None
+    new = body["item"]
+    assert new["track_index"] == 3 and new["start_rel"] == 200 and new["duration"] == 30 and new["source_start"] == 10
+    assert new["name"] == "art-renamed" and old.grades_copied_to
+    assert ids[1] not in item_ids(client, "video")
+    moved = timeline.tracks["video"][2]["items"][0]
+    assert moved.props["Opacity"] == 40.0 and 5.0 in moved.markers and len(moved.comps) == 1
+
+
+def test_relocate_same_track_overlap_deletes_first(client, timeline):
+    iid = item_ids(client, "video")[0]  # spokes on V1 at 0..240
+    r = client.post(f"{ITEMS}/{iid}/relocate", json={"record_frame": 10})
+    assert r.status_code == 200 and r.json()["grade_copied"] is False and "overlap" in r.json()["note"]
+    assert r.json()["item"]["start_rel"] == 10 and len(timeline.tracks["video"][0]["items"]) == 1
+
+
+def test_relocate_rejects_generators_and_bad_ranges(client):
+    tid = client.post(f"{V1}/timelines/current/generators", json={"kind": "generator", "name": "Solid Color"}).json()["item_id"]
+    assert client.post(f"{ITEMS}/{tid}/relocate", json={"record_frame": 5}).status_code == 422
+    iid = item_ids(client, "video")[0]
+    assert client.post(f"{ITEMS}/{iid}/relocate", json={"start_frame": 50, "end_frame": 10}).status_code == 422
+    assert client.post(f"{ITEMS}/nope/relocate", json={}).status_code == 404
+
+
+def test_split_item(client, timeline):
+    iid = item_ids(client, "video")[0]  # 240 frames at rel 0, source 0..240 (exclusive end)
+    r = client.post(f"{ITEMS}/{iid}/split", json={"frame": 100})
+    assert r.status_code == 200, r.text
+    left, right = r.json()["items"]
+    assert left["start_rel"] == 0 and left["duration"] == 100 and left["source_start"] == 0
+    assert right["start_rel"] == 100 and right["source_start"] == 100 and right["end_rel"] == 240
+    assert client.post(f"{ITEMS}/{right['id']}/split", json={"frame": 100}).status_code == 422  # on the boundary
+    assert client.post(f"{ITEMS}/{right['id']}/split", json={"frame": 999}).status_code == 422

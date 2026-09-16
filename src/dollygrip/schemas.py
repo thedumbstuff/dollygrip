@@ -433,6 +433,18 @@ class ItemProperties(BaseModel):
     properties: Dict[str, Any]
 
 
+class RelocateItem(BaseModel):
+    record_frame: Optional[int] = Field(default=None, description="New position, 0-based from the timeline start (default: keep)")
+    track_index: Optional[int] = Field(default=None, ge=1, description="New track of the same type (default: keep)")
+    start_frame: Optional[int] = Field(default=None, description="New source in-point, source-fps frames (default: keep)")
+    end_frame: Optional[int] = Field(default=None, description="New source out-point, source-fps frames (default: keep)")
+    ripple: bool = Field(default=False, description="Ripple-delete the old position")
+
+
+class SplitItem(BaseModel):
+    frame: int = Field(description="Timeline frame to cut at, 0-based from the timeline start (must fall inside the item)")
+
+
 class AddTake(BaseModel):
     clip: str = Field(description="Clip reference")
     start_frame: Optional[int] = None

@@ -22,6 +22,16 @@ from fastapi import FastAPI
 
 MAX_DESCRIPTION = 900
 
+# Curated tag sets so an agent does not have to carry all ~290 tools.
+PROFILES = {
+    "all": None,
+    "editor": ["system", "projects", "mediapool", "timelines", "timeline items", "render", "tools"],
+    "colorist": ["system", "projects", "timelines", "timeline items", "color", "render", "tools"],
+    "motion": ["system", "projects", "timelines", "timeline items", "fusion", "render", "tools"],
+    "delivery": ["system", "projects", "timelines", "render", "tools"],
+    "core": ["system", "projects", "mediapool", "timelines", "timeline items", "tools"],
+}
+
 
 @dataclass
 class ToolSpec:

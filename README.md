@@ -96,9 +96,10 @@ Then just talk to it:
 >
 > "Grab a still of every clip, export the grades as .drx to D:/looks, and copy the grade from the first clip to the rest."
 
-All 287 tools at once is a lot of context. Trim with tags (they are the OpenAPI tags you see in `/docs`):
+All ~290 tools at once is a lot of context. Pick a profile, or trim with tags (the OpenAPI tags you see in `/docs`):
 
 ```bash
+claude mcp add dollygrip -- dollygrip mcp --profile editor     # editor | colorist | motion | delivery | core | all
 claude mcp add dollygrip -- dollygrip mcp --tags "projects,mediapool,timelines,timeline items,render"
 ```
 
@@ -113,7 +114,7 @@ Add `--allow-exec` only if you want Claude to be able to run arbitrary Python in
   "mcpServers": {
     "dollygrip": {
       "command": "dollygrip",
-      "args": ["mcp", "--tags", "projects,mediapool,timelines,timeline items,fusion,color,render"]
+      "args": ["mcp", "--profile", "editor"]
     }
   }
 }
@@ -148,7 +149,7 @@ Timeline items are addressed by the `id` from /timelines/current/items; clips by
 | "Save a .drx of every graded clip" | `grab_stills` → `export_stills` |
 | "Animate the title size in over 10 frames" | `set_tool_keyframes` on the Text+ tool |
 
-Things the Resolve API itself does not expose (so neither can any agent): building color nodes or reading grades back, the Fairlight mixer, Edit-page keyframes, moving/trimming an existing item in place. `/exec` and the composite operations on the [roadmap](docs/ROADMAP.md) are the workarounds.
+Things the Resolve API itself does not expose (so neither can any agent): building color nodes or reading grades back, the Fairlight mixer, Edit-page keyframes. Moving/trimming/splitting an item in place is not native either - DollyGrip's `relocate` and `split` rebuild the item for you (grade preserved when the move does not overlap itself on the same track). `/exec` covers the rest.
 
 ## API surface (v1)
 
@@ -160,7 +161,7 @@ Things the Resolve API itself does not expose (so neither can any agent): buildi
 | Projects | list/create/open/rename/save/close/delete · settings · presets · project folders · import/export/archive/restore · databases · Fairlight presets · AI speech generation |
 | Media pool | bins (tree/create/move/delete/export/import .drb) · clips by id or name (properties, metadata, color, flags, markers, mark in/out) · import files / image sequences / subclips · proxies · relink/unlink · replace · mattes · audio sync · stereo · selection · metadata CSV · transcription / classification / deblur / IntelliSearch / slate |
 | Timelines | list/create/from-clips/import (AAF/EDL/XML/FCPXML/DRT/OTIO) · settings · tracks (add/rename/lock/enable/delete) · `append` · delete/link items · compound & Fusion clips · generators / titles / **Fusion Text+ with text** · playhead · mark in/out · markers · export (17 formats) · duplicate/delete · stills · thumbnail (JSON or PNG) · auto subtitles · scene cuts · voice isolation · Dolby Vision |
-| Timeline items | list (with 0-based frames) · get/patch (name, enabled, color, **all Inspector properties**) · delete (ripple) · flags · markers · linked · audio mapping · takes · stabilize · smart reframe · magic mask · caches · burn-in |
+| Timeline items | list (with 0-based frames) · get/patch (name, enabled, color, **all Inspector properties**) · delete (ripple) · **relocate** (move/trim - re-append preserving properties, markers, Fusion comps and, when possible, the grade) · **split** · flags · markers · linked · audio mapping · takes · stabilize · smart reframe · magic mask · caches · burn-in |
 | Color | versions · CDL · copy grades · LUT export · node graphs (clip / timeline / group pre+post: LUT, cache, enable, DRX, reset) · color groups · gallery albums & stills (import/export/label/delete) · export frame · keyframe mode |
 | Fusion | comps (list/add/import/rename/load/export/delete) · tools (list/add/get/delete) · inputs · connect · **keyframes** · `text-plus` helper · current comp on the Fusion page |
 | Render | formats/codecs/resolutions · presets (list/load/save/delete/import/export) · queue (add with preset/format/mode/settings, list, delete) · start/stop · **wait** · quick export · burn-in presets |

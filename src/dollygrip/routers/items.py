@@ -8,9 +8,9 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 
-from ..bridge import NotFound, ResolveBridge, require
+from ..bridge import NotFound, Rejected, ResolveBridge, require
 from ..deps import resolve_session
-from ..schemas import AddTake, CacheSettings, Flag, ItemProperties, MagicMask, NamedPreset, PatchItem, TrackType, VoiceIsolation
+from ..schemas import AddTake, CacheSettings, Flag, ItemProperties, MagicMask, NamedPreset, PatchItem, RelocateItem, SplitItem, TrackType, VoiceIsolation
 from ..serialize import item_summary, jsonable, safe
 from .markers import mount_markers
 
@@ -121,6 +121,141 @@ def item_audio_mapping(item_id: str, bridge: ResolveBridge = Depends(resolve_ses
         return {"mapping": json.loads(raw) if isinstance(raw, str) else raw}
     except ValueError:
         return {"mapping_raw": raw}
+
+
+# -- composite edits the API lacks natively -----------------------------------
+
+
+def _snapshot(bridge: ResolveBridge, item, tl):
+    tt, idx = safe(item.GetTrackTypeAndIndex, default=[None, None]) or [None, None]
+    start = int(tl.GetStartFrame())
+    return {
+        "mpi": safe(item.GetMediaPoolItem),
+        "track_type": tt,
+        "track_index": idx,
+        "record_rel": int(item.GetStart()) - start,
+        "source_start": safe(item.GetSourceStartFrame),
+        "source_end": safe(item.GetSourceEndFrame),
+        "name": safe(item.GetName),
+        "color": safe(item.GetClipColor),
+        "enabled": safe(item.GetClipEnabled),
+        "properties": safe(item.GetProperty, default={}) or {},
+        "markers": safe(item.GetMarkers, default={}) or {},
+        "comp_names": safe(item.GetFusionCompNameList, default=[]) or [],
+    }
+
+
+def _reappend(bridge: ResolveBridge, tl, snap: dict, record_rel: int, track_index: int, source_start: int, source_end: int):
+    """Re-create an item from a snapshot; restores properties, name, color,
+    enabled state and markers. Returns the new item or raises."""
+    if snap["mpi"] is None:
+        raise Rejected("Only media-pool-backed items can be relocated (generators/titles have no source clip)")
+    info = {
+        "mediaPoolItem": snap["mpi"],
+        "trackIndex": track_index,
+        "recordFrame": int(tl.GetStartFrame()) + record_rel,
+        "startFrame": source_start,
+        "endFrame": source_end,
+        "mediaType": 1 if snap["track_type"] == "video" else 2,
+    }
+    created = bridge.media_pool().AppendToTimeline([info])
+    new = created[0] if created else None
+    if not new:
+        raise Rejected("Resolve refused to re-append the item at the new position (locked track? overlap on the same track?)")
+    if snap["properties"]:
+        safe(new.SetProperty, dict(snap["properties"]))
+    if snap["name"]:
+        safe(new.SetName, snap["name"])
+    if snap["color"]:
+        safe(new.SetClipColor, snap["color"])
+    if snap["enabled"] is False:
+        safe(new.SetClipEnabled, False)
+    for frame, m in snap["markers"].items():
+        safe(new.AddMarker, int(float(frame)), m.get("color", "Blue"), m.get("name", ""), m.get("note", ""), m.get("duration", 1), m.get("customData", ""))
+    return new
+
+
+@router.post("/{item_id}/relocate")
+def relocate_item(item_id: str, body: RelocateItem, bridge: ResolveBridge = Depends(resolve_session)):
+    """Move and/or trim an item. Resolve's API cannot edit an item in place, so
+    this re-appends the same source range at the new position, copies the
+    grade (CopyGrades) and Fusion comps (export/import) onto the new item,
+    restores Inspector properties/name/color/markers, then deletes the old
+    one. Caveats: same-track moves that overlap the old position are done
+    delete-first (grade is lost - Resolve has no grade read-back); linked
+    audio is not moved with a video item (relocate it separately)."""
+    import os
+    import tempfile
+
+    tl = bridge.current_timeline()
+    old = bridge.item(item_id, tl)
+    snap = _snapshot(bridge, old, tl)
+    record_rel = snap["record_rel"] if body.record_frame is None else body.record_frame
+    track_index = snap["track_index"] if body.track_index is None else body.track_index
+    source_start = snap["source_start"] if body.start_frame is None else body.start_frame
+    source_end = snap["source_end"] if body.end_frame is None else body.end_frame
+    if source_end is not None and source_start is not None and source_end < source_start:
+        raise Rejected("end_frame must be >= start_frame")
+    new_len = (source_end - source_start) if None not in (source_start, source_end) else int(old.GetDuration())
+    old_end_rel = snap["record_rel"] + int(old.GetDuration())
+    same_track = track_index == snap["track_index"]
+    overlaps = same_track and record_rel < old_end_rel and record_rel + new_len > snap["record_rel"]
+
+    comp_files = []
+    tmpdir = tempfile.mkdtemp(prefix="dollygrip-comps-") if snap["comp_names"] else None
+    for i, name in enumerate(snap["comp_names"], start=1):
+        path = os.path.join(tmpdir, f"{i}.comp")
+        if safe(old.ExportFusionComp, path, i):
+            comp_files.append((name, path))
+
+    grade_copied = False
+    if overlaps:
+        require(tl.DeleteClips([old], body.ripple), "Resolve refused to delete the original item")
+        new = _reappend(bridge, tl, snap, record_rel, track_index, source_start, source_end)
+    else:
+        new = _reappend(bridge, tl, snap, record_rel, track_index, source_start, source_end)
+        grade_copied = bool(safe(old.CopyGrades, [new]))
+        require(tl.DeleteClips([old], body.ripple), "Re-appended, but Resolve refused to delete the original item")
+
+    comps_restored = 0
+    for name, path in comp_files:
+        comp = safe(new.ImportFusionComp, path)
+        if comp:
+            comps_restored += 1
+            imported_name = safe(lambda: comp.GetAttrs().get("COMPS_Name")) or safe(lambda: comp.name)
+            if imported_name and imported_name != name:
+                safe(new.RenameFusionCompByName, imported_name, name)
+    return {
+        "ok": True,
+        "item": _summary(bridge, new, tl),
+        "grade_copied": grade_copied,
+        "fusion_comps_restored": comps_restored,
+        "note": None if not overlaps else "same-track overlap: deleted first, grade not preserved",
+    }
+
+
+@router.post("/{item_id}/split")
+def split_item(item_id: str, body: SplitItem, bridge: ResolveBridge = Depends(resolve_session)):
+    """Cut an item in two at a timeline frame (re-appends both halves with the
+    same source mapping; properties/name/color restored). Returns both new
+    item ids. Grades are not preserved (no grade read-back in the API)."""
+    tl = bridge.current_timeline()
+    old = bridge.item(item_id, tl)
+    snap = _snapshot(bridge, old, tl)
+    dur = int(old.GetDuration())
+    offset = body.frame - snap["record_rel"]
+    if not 0 < offset < dur:
+        raise Rejected(f"frame {body.frame} is not strictly inside the item ({snap['record_rel']}..{snap['record_rel'] + dur})")
+    ss, se = snap["source_start"], snap["source_end"]
+    if None in (ss, se):
+        raise Rejected("Item has no source range to split")
+    # source frames per timeline frame (retimed or mixed-fps items are not 1:1)
+    scale = (se - ss) / dur if dur else 1
+    cut_src = ss + int(round(offset * scale))
+    require(tl.DeleteClips([old], False), "Resolve refused to delete the original item")
+    left = _reappend(bridge, tl, snap, snap["record_rel"], snap["track_index"], ss, cut_src)  # endFrame is exclusive
+    right = _reappend(bridge, tl, snap, body.frame, snap["track_index"], cut_src, se)
+    return {"ok": True, "items": [_summary(bridge, left, tl), _summary(bridge, right, tl)]}
 
 
 # -- takes -----------------------------------------------------------------

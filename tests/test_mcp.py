@@ -94,3 +94,17 @@ def test_stdio_server_builds_if_mcp_installed(app):
 
     assert Server("dollygrip").name == "dollygrip"
     assert callable(mcp_server.serve_stdio)
+
+
+def test_profiles_are_valid_tag_sets(app):
+    from dollygrip.mcp_server import PROFILES
+
+    all_tags = {t for spec in build_tool_specs(app) for t in spec.tags}
+    for name, tags in PROFILES.items():
+        if tags is None:
+            continue
+        assert set(tags) <= all_tags, name
+        subset = build_tool_specs(app, include_tags=tags)
+        assert 0 < len(subset) < len(build_tool_specs(app)), name
+    editor = {t.name for t in build_tool_specs(app, include_tags=PROFILES["editor"])}
+    assert "append_items" in editor and "set_cdl" not in editor and "exec_code" not in editor
