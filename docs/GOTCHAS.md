@@ -131,3 +131,21 @@ can; the rest you need to know when you reach for `/exec` or extend the API.
   plan/b-roll responses return an `attribution` list - keep it with the export.
 - Downloads are cached by `<provider>-<id>-<w>x<h>.mp4` in the media dir; a
   `.json` sidecar next to each file records provider, author, term and page URL.
+
+## Learned making a real video end to end (Resolve Studio 21.0.4, 2026-09-16)
+
+- **`ReplaceExistingFilesInPlace` makes `SetRenderSettings` return False** on
+  this build even though the README lists it. Leave it out and use a new
+  `CustomName` (Resolve refuses to overwrite anyway).
+- **Fusion titles land where the playhead is, on the lowest track with room**
+  - so on an EMPTY timeline, inserting titles at 0, 150, 300... puts them back
+  to back on V1 exactly. Insert titles before other clips when you need exact
+  placement; the default title length is 5 s (150 frames at 30 fps).
+- **A Fusion title can carry its own background**: add a `Background` tool and
+  `Merge`s inside the title's comp and rewire `MediaOut1.Input` - one item per
+  card, no separate colour clips. `Background` colour = `TopLeftRed/Green/
+  Blue/Alpha`; set `UseFrameFormatSettings: 1` so tools take the timeline size.
+- **Fonts lacking a glyph render boxes, not fallbacks** - Comic Sans MS has no
+  ★ (U+2605); put symbols in their own Text+ using `Segoe UI Symbol`.
+- **Windows can voice a script offline**: `System.Speech.Synthesis` (SAPI
+  voices Zira/David) writes WAVs that import straight into Resolve.
