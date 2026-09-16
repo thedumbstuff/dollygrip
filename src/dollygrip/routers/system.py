@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query
 
 from .. import discovery
 from ..bridge import ResolveBridge, require
+from ..constants import KNOWN_CONSTANTS
 from ..deps import get_bridge, resolve_session
 from ..schemas import Confirm, ExportPreset, ImportPreset, NamedPreset, SetPage, StoragePath, StoragePaths
 from ..serialize import clip_summary, safe
@@ -51,11 +52,12 @@ def system_info(bridge: ResolveBridge = Depends(resolve_session)):
 
 @router.get("/system/constants")
 def system_constants(prefix: str = Query(default="", description="Filter, e.g. EXPORT_ or MARKER_"), bridge: ResolveBridge = Depends(resolve_session)):
-    """The `resolve.*` enum constants this build exposes (values you can pass to /exec)."""
+    """The `resolve.*` enum constants this build exposes (values you can pass to /exec).
+    Probed from the documented list - the proxy does not enumerate them via dir()."""
     r = bridge.ensure()
     out = {}
-    for name in dir(r):
-        if name.isupper() and name.startswith(prefix):
+    for name in KNOWN_CONSTANTS:
+        if name.startswith(prefix):
             value = getattr(r, name, None)
             if isinstance(value, (int, float, str, bool)):
                 out[name] = value

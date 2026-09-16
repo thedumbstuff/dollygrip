@@ -63,3 +63,36 @@ can; the rest you need to know when you reach for `/exec` or extend the API.
   `IsRenderingInProgress()` / `GetRenderJobStatus(job_id)`.
 - Renders include everything on the timeline - if an audio bed extended the
   timeline (see above), trim the output file.
+
+## Learned while covering the full API (live on Resolve Studio 21.0.4, 2026-09-16)
+
+- **A clip's Mark In/Out silently trims appends.** `AppendToTimeline` without
+  `startFrame`/`endFrame` uses the media pool clip's mark in/out if one is
+  set (a 180-frame clip marked 10..100 landed as 91 frames). Clear the marks
+  (`DELETE /mediapool/clips/{ref}/mark-in-out`) or pass explicit frames.
+- **`resolve.*` constants are not enumerable.** `dir(resolve)` lists none of
+  the `EXPORT_*`, `MARKER_*`, ... enums, but `getattr` works (values are
+  floats). `GET /system/constants` probes the documented names for you.
+- **Re-importing a Resolve-exported OTIO fails with the default options** when
+  the media is already in the pool. `import_source_clips: false` plus
+  `source_clips_bins` pointing at the bin that holds the media imports fine.
+- **FCPXML 1.10 export writes a bundle directory** (`name.fcpxml/Info.fcpxml`
+  ...), not a single file. Plan file handling accordingly.
+- **Media Storage listing only answers inside configured storage locations.**
+  `GetSubFolderList` / `GetFileList` return `[]` for a drive root (`C:\`) or
+  arbitrary paths; under a volume added in Preferences > Media Storage they
+  work. `GET /storage/volumes` tells you where you may look.
+- **Fusion comps ARE scriptable** even though the Resolve README does not list
+  the comp/tool API: `comp.GetToolList()`, `AddTool(regid)`, `FindTool(name)`,
+  `tool.SetInput(name, value[, time])`, `tool.<Input>[frame] = value` for
+  keyframes, `tool.Delete()`, `comp.Save(path)`. A Fusion title inserted via
+  `InsertFusionTitleIntoTimeline("Text+")` carries one `TextPlus` tool named
+  `Template` - set `StyledText` on it for data-driven titles. Points/colors are
+  1-based tables (`{1: x, 2: y}`); the gateway converts `[x, y]` lists.
+- **`GetCurrentPage()` can be `None`** right after launch (project manager
+  showing). `GetCurrentClipThumbnailImage` only returns data on the Color page.
+- **Deleting the open project is refused**; close it (or load another) first.
+  Closing an unsaved "Untitled Project" discards it - there is nothing to
+  reopen.
+- **`TimelineItem.GetProperty()` for enum keys returns the numeric constant**
+  (CompositeMode 0 = Normal ...); pass numbers back when setting.
