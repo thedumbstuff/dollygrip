@@ -70,3 +70,28 @@ def test_burn_in_presets(client, project, fake_resolve):
     assert client.post(f"{R}/burn-in/presets/Dailies/export", json={"path": "D:/d.xml"}).json()["ok"]
     assert client.delete(f"{R}/burn-in/presets/Dailies").json()["ok"]
     assert client.delete(f"{R}/burn-in/presets/Dailies").status_code == 422
+
+
+def test_job_events_stream(client, project):
+    job_id = client.post(f"{R}/jobs", json={"start": False}).json()["job_id"]
+    project.jobs[job_id] = {"JobStatus": "Rendering", "CompletionPercentage": 40}
+
+    import threading
+
+    # the test client buffers the body, so flip the job to Complete from a timer while the stream polls
+    def finish():
+        project.jobs[job_id] = {"JobStatus": "Complete", "CompletionPercentage": 100}
+
+    threading.Timer(0.5, finish).start()
+    with client.stream("GET", f"{R}/jobs/{job_id}/events", params={"poll": 0.2, "timeout": 5}) as r:
+        assert r.status_code == 200 and r.headers["content-type"].startswith("text/event-stream")
+        text = "".join(r.iter_text())
+    assert "event: progress" in text and "event: done" in text and '"CompletionPercentage": 100' in text
+    assert client.get(f"{R}/jobs/ghost/events").status_code == 404
+
+
+def test_job_events_timeout(client, project):
+    job_id = client.post(f"{R}/jobs", json={"start": False}).json()["job_id"]
+    with client.stream("GET", f"{R}/jobs/{job_id}/events", params={"poll": 0.2, "timeout": 0}) as r:
+        text = "".join(r.iter_text())
+    assert "event: progress" in text and "event: timeout" in text

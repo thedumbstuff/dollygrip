@@ -3,9 +3,11 @@ start/stop/wait, quick export, burn-in presets."""
 
 from __future__ import annotations
 
+import json
 import time
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import StreamingResponse
 
 from ..bridge import NotFound, ResolveBridge, require
 from ..deps import get_bridge, resolve_session
@@ -192,6 +194,46 @@ def wait_for_job(
         if state in ("Complete", "Failed", "Cancelled") or time.monotonic() >= deadline:
             return {"job_id": job_id, "done": state in ("Complete", "Failed", "Cancelled"), "timed_out": state not in ("Complete", "Failed", "Cancelled"), **status}
         time.sleep(poll)
+
+
+_DONE_STATES = ("Complete", "Failed", "Cancelled")
+
+
+@router.get("/jobs/{job_id}/events")
+def job_events(
+    job_id: str,
+    timeout: float = Query(default=3600, ge=0, le=86400),
+    poll: float = Query(default=2.0, ge=0.2, le=60),
+    bridge: ResolveBridge = Depends(get_bridge),
+):
+    """Server-sent events for a render job: `progress` events with the status
+    dict, then one `done` (or `timeout`) event. Poll-free progress for UIs and
+    agents. The bridge lock is held only while each status is read."""
+    with bridge.lock:
+        bridge.ensure()
+        first = bridge.current_project().GetRenderJobStatus(job_id)
+    if not first:
+        raise NotFound(f"Render job {job_id!r} not found")
+
+    def stream():
+        deadline = time.monotonic() + timeout
+        status = first
+        while True:
+            state = str(status.get("JobStatus", ""))
+            payload = json.dumps({"job_id": job_id, **status}, default=str)
+            if state in _DONE_STATES:
+                yield f"event: done\ndata: {payload}\n\n"
+                return
+            yield f"event: progress\ndata: {payload}\n\n"
+            if time.monotonic() >= deadline:
+                yield f"event: timeout\ndata: {payload}\n\n"
+                return
+            time.sleep(poll)
+            with bridge.lock:
+                bridge.ensure()
+                status = bridge.current_project().GetRenderJobStatus(job_id) or {"JobStatus": "Cancelled", "detail": "job disappeared"}
+
+    return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 # -- quick export -------------------------------------------------------------
