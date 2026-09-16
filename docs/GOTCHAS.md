@@ -119,3 +119,15 @@ can; the rest you need to know when you reach for `/exec` or extend the API.
   ~309 inputs; `GET .../tools/{tool}/inputs?page=Text` narrows it.
 - **`tool.<Input>.SetExpression(expr)` / `GetExpression()` work** on the live
   comp; the expression shows up in the input attrs immediately.
+
+## Stock footage (providers, 2026-09-16)
+
+- Provider keys live in the GATEWAY's environment (`PEXELS_API_KEY`, ...), not
+  in requests; `GET /stock/providers` shows which are configured.
+- Pexels renditions carry `fps`; Pixabay and Coverr do not. The assembler never
+  trusts provider fps - it reads the clip's FPS from Resolve after import and
+  converts the planned seconds to source frames with that.
+- Pexels and Pixabay are free to use without credit, but both ask for it; the
+  plan/b-roll responses return an `attribution` list - keep it with the export.
+- Downloads are cached by `<provider>-<id>-<w>x<h>.mp4` in the media dir; a
+  `.json` sidecar next to each file records provider, author, term and page URL.

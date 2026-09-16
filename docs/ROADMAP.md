@@ -5,7 +5,7 @@ MCP tools) - from "assemble and render a cut" to full post pipelines: motion
 graphics, grading, VFX compositing, sound. Blockbuster-grade automation, one
 endpoint at a time.
 
-## Where we are (v0.4)
+## Where we are (v0.5)
 
 Every object and method in Blackmagic's scripting README for Resolve 21 has a
 typed endpoint (287 operations), plus the undocumented Fusion comp/tool API
@@ -32,6 +32,7 @@ render + wait, OTIO/EDL/FCPXML export, project export).
 | Recipes: `POST /recipes/run`, `dollygrip run` (templating, dry-run) | done |
 | Render progress as server-sent events | done |
 | Fusion parameter discovery, expressions, bypass | done |
+| Stock footage: Pexels/Pixabay/Coverr search, shot planner, Resolve-native stitch, one-call b-roll | done |
 | Timecode helpers | done |
 
 ## Next
@@ -44,6 +45,10 @@ render + wait, OTIO/EDL/FCPXML export, project export).
   one call (today: import comp, then `list_tool_inputs` + `set_tool_inputs`).
 - **Recipe library**: shareable recipe files for common deliverables
   (vertical reel, podcast clip, dailies with burn-ins).
+- **Stock depth**: more providers (Storyblocks/Artgrid need paid accounts),
+  AI-generated shots as a provider, keyword extraction from a script via an
+  LLM step, transitions between shots (Resolve exposes none via the API -
+  Fusion cross-dissolve composite is the candidate), BGM bed with fade.
 - **v2 contract pass**: consistent `{ok, data}` envelopes once v1 usage
   settles (v1 stays frozen).
 

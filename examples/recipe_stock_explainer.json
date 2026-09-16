@@ -1,0 +1,62 @@
+{
+  "steps": [
+    {
+      "name": "tl",
+      "op": "create_timeline",
+      "args": {
+        "name": "stock-explainer",
+        "width": 1080,
+        "height": 1920,
+        "fps": 30,
+        "start_timecode": "00:00:00:00"
+      }
+    },
+    {
+      "name": "broll",
+      "op": "stock_b_roll",
+      "args": {
+        "terms": [
+          "city at night",
+          "student studying",
+          "phone camera close-up"
+        ],
+        "voiceover_path": "D:/vo/take3.wav",
+        "provider": "pexels",
+        "aspect": "portrait",
+        "max_clip_duration": 4,
+        "mode": "script_order",
+        "fit": "fill",
+        "bin": "stock"
+      }
+    },
+    {
+      "name": "captions",
+      "op": "auto_subtitles",
+      "args": {
+        "language": "english",
+        "preset": "NETFLIX"
+      }
+    },
+    {
+      "name": "render",
+      "op": "add_job",
+      "args": {
+        "preset": "H.264 Master",
+        "settings": {
+          "TargetDir": "D:/out",
+          "CustomName": "stock-explainer",
+          "SelectAllFrames": true
+        }
+      }
+    },
+    {
+      "name": "wait",
+      "op": "wait_for_job",
+      "args": {
+        "job_id": "{{ steps.render.job_id }}",
+        "timeout": 900
+      }
+    }
+  ],
+  "stop_on_error": true
+}

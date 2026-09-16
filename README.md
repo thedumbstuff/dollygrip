@@ -31,6 +31,7 @@ DollyGrip turns all of that into `curl` (or an MCP tool call):
 - **Crash-proof discovery** - fusionscript segfaults (no exception - the interpreter dies) on Python builds it dislikes; DollyGrip proves the import in a sacrificial subprocess first, so the gateway survives and answers 503 with a hint instead of dying, and `dollygrip doctor` scans your interpreters for one that works.
 - **Stable addressing** - timeline items by unique id, clips by id or name anywhere in the pool, bins by path, `current` for whatever is under the playhead. No object handles leak across HTTP.
 - **Sharp edges sanded off** - source-fps frames, absolute record frames, `useCustomSettings` ordering, marker dicts flattened to lists, Fusion point tables from plain `[x, y]` lists (see below).
+- **Stock footage to timeline** - search Pexels / Pixabay / Coverr per script keyword, pick clips that cover a voiceover (script order or random, no source repeated before every source has appeared), and stitch them as real Resolve timeline items with fill/fit framing - the MoneyPrinterTurbo move, but the result is a timeline you can still grade and re-cut.
 - **A guarded escape hatch** - `POST /api/v1/exec` runs raw Python against the live scripting objects. Off by default.
 - **Interactive docs for free** - OpenAPI/Swagger at `/docs`; the same document generates the MCP tools.
 
@@ -100,6 +101,30 @@ dollygrip run examples/recipe_reel.json
 ```
 
 `dry_run: true` returns the resolved plan without touching Resolve; the `run` MCP tool exposes the same thing to agents, so Claude can plan a whole edit and execute it in one call.
+
+## Stock footage: keywords in, timeline out
+
+Give it the script's keywords (in order), a voiceover (or a duration) and an aspect, and it fills the timeline with stock b-roll:
+
+```bash
+export PEXELS_API_KEY=...            # free at pexels.com/api (also PIXABAY_API_KEY, COVERR_API_KEY)
+dollygrip serve --media-dir D:/stock # where downloads land (default ~/DollyGrip/stock)
+
+curl -X POST localhost:4747/api/v1/stock/b-roll -H 'content-type: application/json' -d '{
+  "terms": ["city at night", "student studying", "phone camera close-up"],
+  "voiceover_path": "D:/vo/take3.wav", "voiceover_track": 1,
+  "provider": "pexels", "aspect": "portrait", "max_clip_duration": 4,
+  "mode": "script_order", "track_index": 1, "fit": "fill", "bin": "stock"
+}'
+```
+
+What happens, step by step (each is also its own endpoint so you can intervene):
+
+1. `POST /stock/search` - per keyword, the provider is queried with the aspect; results are filtered by orientation, minimum duration and the rendition whose short side reaches 1080; searches are cached for 24 h and API keys rotate.
+2. `POST /stock/plan` - clips are cut into segments of at most `max_clip_duration`; `script_order` round-robins through the keywords so the footage follows the script, `random` shuffles; the longest segment of every source comes before any source repeats; the list loops until the voiceover (plus 0.1 s) is covered and the last shot is trimmed to the end. Chosen clips are downloaded with a JSON source record (provider, author, page URL) for attribution.
+3. `POST /stock/assemble` - files are imported once into the bin, each shot is appended at its record frame with the source range converted using the clip's OWN fps (the source-fps trap), `fit: fill` sets Resolve's Scaling to Fill (cover) or `fit` to letterbox, and the voiceover is placed on the audio track. Resolve's own clock measures the voiceover when you pass a path.
+
+Add captions with `POST /timelines/current/subtitles/auto` (Studio) or per-line Text+ titles, then `add_job`. Pexels and Pixabay content is free to use; keep the `attribution` list the plan returns if you publish.
 
 ## Using DollyGrip with Claude
 
@@ -182,6 +207,7 @@ Timeline items are addressed by the `id` from /timelines/current/items; clips by
 | "What can I tweak on this lower-third template?" | `list_tool_inputs` (control type, range, default per parameter) |
 | "Insert this shot at the playhead and push everything down" | `ripple_insert` |
 | "Do the whole rough cut, title and export in one go" | `run` (a recipe) |
+| "Make a 40-second vertical explainer about X from stock footage, over this voiceover" | `stock_b_roll` (Pexels search -> shot plan -> timeline), then `auto_subtitles` + `add_job` |
 
 Things the Resolve API itself does not expose (so neither can any agent): building color nodes or reading grades back, the Fairlight mixer, Edit-page keyframes. Moving/trimming/splitting an item in place is not native either - DollyGrip's `relocate` and `split` rebuild the item for you (grade preserved when the move does not overlap itself on the same track). `/exec` covers the rest.
 
@@ -199,6 +225,7 @@ Things the Resolve API itself does not expose (so neither can any agent): buildi
 | Color | versions · CDL · copy grades · LUT export · node graphs (clip / timeline / group pre+post: LUT, cache, enable, DRX, reset) · color groups · gallery albums & stills (import/export/label/delete) · export frame · keyframe mode |
 | Fusion | comps (list/add/import/rename/load/export/delete) · tools (list/add/get/rename/bypass/delete) · **input discovery** (every parameter of any tool or template with control type, range, default, value) · set inputs · **expressions** · connect · **keyframes** · `text-plus` helper · current comp on the Fusion page |
 | Render | formats/codecs/resolutions · presets (list/load/save/delete/import/export) · queue (add with preset/format/mode/settings, list, delete) · start/stop · **wait** · **progress as server-sent events** · quick export · burn-in presets |
+| Stock | `GET /stock/providers` · `POST /stock/search` · `POST /stock/download` · `POST /stock/plan` · `POST /stock/assemble` · **`POST /stock/b-roll`** (keywords + voiceover -> stitched timeline in one call) |
 | Recipes | `POST /recipes/run` - a whole pipeline as ordered steps with `{{ steps.name.path }}` templating, dry-run, stop-on-error · `GET /recipes/operations` · `dollygrip run recipe.json` |
 | Tools | `tools/timecode` (frames ⇄ timecode, drop-frame aware) |
 | Escape hatch | `POST /exec` (requires `--allow-exec`) - namespace: `resolve, fusion, project_manager, project, media_pool, media_storage, timeline, gallery` |

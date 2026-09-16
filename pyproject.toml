@@ -1,6 +1,6 @@
 [project]
 name = "dollygrip"
-version = "0.4.0"
+version = "0.5.0"
 description = "A local REST gateway for the DaVinci Resolve scripting API - give any HTTP client (or AI agent) a grip on your edit."
 readme = "README.md"
 requires-python = ">=3.9"

@@ -7,12 +7,13 @@ Guidance for Claude Code when working in this repo.
 **DollyGrip** is an open-source local REST gateway (and MCP server) for the DaVinci Resolve
 scripting API: a FastAPI app (`127.0.0.1:4747`) that lets any HTTP client - shell, Node, n8n,
 CI, AI agents - drive a running Resolve Studio. Swagger at `/docs`, everything under `/api/v1`
-(300+ operations as of v0.4). `dollygrip mcp` exposes the same operations as MCP tools.
+(300+ operations as of v0.5). `dollygrip mcp` exposes the same operations as MCP tools.
 
 **The standing goal**: everything a human can do in Resolve, reachable over HTTP. v0.4 covers
 every method in Blackmagic's scripting README for Resolve 21, the (undocumented) Fusion
 comp/tool API, composite edits the API lacks (relocate/split/ripple-insert), recipes, SSE render
-progress and MCP profiles/resources. `docs/ROADMAP.md` lists what is left (retime, AI-analysis
+progress, MCP profiles/resources and stock-footage b-roll (Pexels/Pixabay/Coverr -> planned shots ->
+timeline). `docs/ROADMAP.md` lists what is left (retime, AI-analysis
 progress, Fusion macro import, recipe library). Born from a real production pipeline.
 
 ## Commands
@@ -47,9 +48,12 @@ src/dollygrip/
   routers/       system (+storage), projects, mediapool, timelines (+ripple-insert), items
                  (+relocate/split composites), markers (factory, mounted 3x), color (graph factory
                  mounted 4x, groups, gallery), fusion (+input discovery/expressions), render (+SSE
-                 events), recipes, tools (offline timecode), exec_
+                 events), recipes, stock (search/plan/assemble/b-roll), tools (offline timecode), exec_
   mcp_server.py  OpenAPI -> MCP tools (name = operationId) + resources, in-process ASGI dispatch,
                  mcp 1.x/2.x, PROFILES (curated tag sets)
+  stock.py       StockClient: Pexels/Pixabay/Coverr search (filters, 24h cache, key rotation), downloads
+                 + source records; fetch/download are injectable (tests use canned responses)
+  broll.py       plan_shots: pure shot planning (segments, script_order/random, unique-first, loop)
   recipes.py     run_recipe: ordered steps of operations with {{ steps.name.path }} templating,
                  dispatched in-process through the app (routers/recipes.py exposes POST /recipes/run)
   cli.py         argparse: serve, doctor, mcp, run
