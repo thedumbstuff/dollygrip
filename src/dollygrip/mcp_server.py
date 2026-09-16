@@ -120,6 +120,37 @@ def build_tool_specs(
     return tools
 
 
+def resource_catalog(app: FastAPI) -> List[Dict[str, Any]]:
+    """MCP resources an agent can read to self-serve: the OpenAPI document,
+    the recipe operation list, and (from a checkout) the gotchas ledger and
+    README. Each entry: uri, name, mime_type, read() -> str."""
+    import json as _json
+    from pathlib import Path
+
+    out: List[Dict[str, Any]] = [
+        {
+            "uri": "dollygrip://openapi.json",
+            "name": "DollyGrip OpenAPI document",
+            "mime_type": "application/json",
+            "read": lambda: _json.dumps(app.openapi()),
+        },
+        {
+            "uri": "dollygrip://operations",
+            "name": "Operation names with their arguments (for recipes and tools)",
+            "mime_type": "application/json",
+            "read": lambda: _json.dumps(
+                [{"op": t.name, "method": t.method, "path": t.path, "args": sorted(t.input_schema.get("properties", {})), "required": t.input_schema.get("required", [])} for t in build_tool_specs(app)]
+            ),
+        },
+    ]
+    repo = Path(__file__).resolve().parents[2]
+    for rel, uri, name in (("docs/GOTCHAS.md", "dollygrip://gotchas", "Resolve scripting API gotchas"), ("README.md", "dollygrip://readme", "DollyGrip README")):
+        path = repo / rel
+        if path.is_file():
+            out.append({"uri": uri, "name": name, "mime_type": "text/markdown", "read": (lambda p=path: p.read_text(encoding="utf-8"))})
+    return out
+
+
 class Dispatcher:
     """Calls the FastAPI app in-process for a tool invocation."""
 
@@ -182,6 +213,16 @@ def serve_stdio(app: FastAPI, include_tags=None, exclude_tags=None, token: Optio
             result = await dispatcher.call(tool, arguments)
         return json.dumps(result, default=str)
 
+    resources = resource_catalog(app)
+    by_uri = {r["uri"]: r for r in resources}
+    mcp_resources = [types.Resource(uri=r["uri"], name=r["name"], mimeType=r["mime_type"]) for r in resources]
+
+    def _read(uri: str):
+        entry = by_uri.get(str(uri))
+        if entry is None:
+            raise ValueError(f"unknown resource {uri!r}")
+        return types.TextResourceContents(uri=uri, mimeType=entry["mime_type"], text=entry["read"]())
+
     if hasattr(Server, "list_tools"):  # mcp 1.x: decorator registration
         server = Server("dollygrip")
 
@@ -193,6 +234,14 @@ def serve_stdio(app: FastAPI, include_tags=None, exclude_tags=None, token: Optio
         async def _call_tool_v1(name: str, arguments: Dict[str, Any]) -> List[types.TextContent]:
             return [types.TextContent(type="text", text=await _call(name, arguments or {}))]
 
+        @server.list_resources()
+        async def _list_resources_v1() -> List[types.Resource]:
+            return mcp_resources
+
+        @server.read_resource()
+        async def _read_resource_v1(uri) -> str:
+            return _read(uri).text
+
     else:  # mcp 2.x: handlers passed to the constructor, (ctx, params) signature
 
         async def _list_tools_v2(ctx, params):
@@ -203,11 +252,23 @@ def serve_stdio(app: FastAPI, include_tags=None, exclude_tags=None, token: Optio
             is_error = text.startswith('{"status"')
             return types.CallToolResult(content=[types.TextContent(type="text", text=text)], isError=is_error)
 
+        async def _list_resources_v2(ctx, params):
+            return types.ListResourcesResult(resources=mcp_resources)
+
+        async def _read_resource_v2(ctx, params):
+            return types.ReadResourceResult(contents=[_read(params.uri)])
+
         server = Server(
             "dollygrip",
-            instructions="Drive the running DaVinci Resolve Studio. Start with health, current_project, list_timelines, list_items.",
+            instructions=(
+                "Drive the running DaVinci Resolve Studio. Start with health, current_project, list_timelines, "
+                "list_items. Read dollygrip://gotchas before timeline work; use the `run` tool to execute a whole "
+                "recipe of operations in one call."
+            ),
             on_list_tools=_list_tools_v2,
             on_call_tool=_call_tool_v2,
+            on_list_resources=_list_resources_v2,
+            on_read_resource=_read_resource_v2,
         )
 
     async def _run():

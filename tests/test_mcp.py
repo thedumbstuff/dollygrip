@@ -108,3 +108,17 @@ def test_profiles_are_valid_tag_sets(app):
         assert 0 < len(subset) < len(build_tool_specs(app)), name
     editor = {t.name for t in build_tool_specs(app, include_tags=PROFILES["editor"])}
     assert "append_items" in editor and "set_cdl" not in editor and "exec_code" not in editor
+
+
+def test_resource_catalog(app):
+    import json
+
+    from dollygrip.mcp_server import resource_catalog
+
+    cat = {r["uri"]: r for r in resource_catalog(app)}
+    assert "dollygrip://openapi.json" in cat and "dollygrip://operations" in cat
+    assert "paths" in json.loads(cat["dollygrip://openapi.json"]["read"]())
+    ops = {o["op"] for o in json.loads(cat["dollygrip://operations"]["read"]())}
+    assert "append_items" in ops
+    # from a checkout the docs are exposed too
+    assert cat["dollygrip://gotchas"]["read"]().startswith("# Resolve scripting API gotchas")
