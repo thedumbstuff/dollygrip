@@ -120,4 +120,4 @@ DollyGrip is an independent open-source project, not affiliated with or endorsed
 
 ## License
 
-[MIT](LICENSE)
+[Apache-2.0](LICENSE)
