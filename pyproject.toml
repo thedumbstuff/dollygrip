@@ -24,8 +24,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/shwetank/dollygrip"
-Issues = "https://github.com/shwetank/dollygrip/issues"
+Homepage = "https://github.com/thedumbstuff/dollygrip"
+Issues = "https://github.com/thedumbstuff/dollygrip/issues"
 
 [project.scripts]
 dollygrip = "dollygrip.cli:main"

@@ -106,7 +106,7 @@ Any agent that can run `curl` or make HTTP calls can drive Resolve through Dolly
 ## Development
 
 ```bash
-git clone https://github.com/shwetank/dollygrip && cd dollygrip
+git clone https://github.com/thedumbstuff/dollygrip && cd dollygrip
 uv sync            # installs with the dev group (pytest, httpx)
 uv run pytest      # the suite runs against an in-memory fake Resolve - no install needed
 uv run dollygrip serve
