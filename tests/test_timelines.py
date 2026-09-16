@@ -191,3 +191,10 @@ def test_ripple_insert_length_from_clip_and_single_track(client, timeline):
     video_starts = [i["start_rel"] for i in client.get(f"{V1}/timelines/current/items", params={"track_type": "video"}).json()["items"]]
     assert sorted(video_starts) == [0, 30]  # video untouched
     assert client.post(f"{V1}/timelines/current/ripple-insert", json={"clip_name": "ghost"}).status_code == 404
+
+
+def test_ripple_insert_skips_titles(client, timeline):
+    client.post(f"{V1}/timelines/current/generators", json={"kind": "title", "name": "Text"})  # lands at rel 0 on V1, no source clip
+    r = client.post(f"{V1}/timelines/current/ripple-insert", json={"clip_name": "art.mov", "track_index": 3, "record_frame": 0, "start_frame": 0, "end_frame": 10, "media_type": "video"})
+    assert r.status_code == 200, r.text
+    assert r.json()["skipped"][0]["name"] == "Text" and len(r.json()["moved"]) == 3

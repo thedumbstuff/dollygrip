@@ -171,13 +171,14 @@ _INPUT_ATTRS = {
     "INPN_Default": "default",
     "INPS_Default": "default",
     "INPB_Connected": "connected",
-    "INPS_Page": "page",
+    "INPS_ICS_ControlPage": "page",
+    "INPB_Integer": "integer",
     "INPB_Visible": "visible",
 }
 
 
 @router.get("/items/{item_id}/comps/{comp}/tools/{tool}/inputs")
-def list_tool_inputs(item_id: str, comp: str, tool: str, page: Optional[str] = Query(default=None, description="Only inputs on this Inspector page, e.g. 'Text', 'Layout', 'Controls'"), bridge: ResolveBridge = Depends(resolve_session)):
+def list_tool_inputs(item_id: str, comp: str, tool: str, page: Optional[str] = Query(default=None, description="Only inputs on this Inspector page (INPS_ICS_ControlPage), e.g. 'Text', 'Layout', 'Shading', 'Settings'"), bridge: ResolveBridge = Depends(resolve_session)):
     """Parameter discovery for any tool - including macros/templates from the
     Effects Library: every input with its control type, range, default,
     current value and expression. This is how an agent learns what a

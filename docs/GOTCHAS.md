@@ -99,3 +99,23 @@ can; the rest you need to know when you reach for `/exec` or extend the API.
   reopen.
 - **`TimelineItem.GetProperty()` for enum keys returns the numeric constant**
   (CompositeMode 0 = Normal ...); pass numbers back when setting.
+
+## Learned building the composite edits (live on Resolve Studio 21.0.4, 2026-09-16)
+
+- **A/V appends need the audio track to exist.** `AppendToTimeline` with
+  `trackIndex: 3` puts video on V3 and audio on A3; if A3 does not exist the
+  audio part is dropped SILENTLY (no error, `GetLinkedItems()` is empty).
+  Add the audio track first (`POST /timelines/current/tracks`).
+- **Re-appending into an occupied range pushes and trims.** Relocating a clip
+  onto a range another item occupies on the same track lands it AFTER that
+  item and shortens it (requested 300 for 60 frames, got 310 for 50). The
+  `relocate`/`ripple-insert` responses now flag this (`placed_as_requested`,
+  `note`); check them.
+- **Generators, titles and Fusion compositions cannot be re-appended** - they
+  have no media pool item. `relocate` refuses them (422) and `ripple-insert`
+  leaves them in place and lists them under `skipped`.
+- **The Inspector page of a Fusion input is `INPS_ICS_ControlPage`** (values
+  like `Text`, `Layout`, `Shading`, `Settings`), not `INPS_Page`. Text+ exposes
+  ~309 inputs; `GET .../tools/{tool}/inputs?page=Text` narrows it.
+- **`tool.<Input>.SetExpression(expr)` / `GetExpression()` work** on the live
+  comp; the expression shows up in the input attrs immediately.

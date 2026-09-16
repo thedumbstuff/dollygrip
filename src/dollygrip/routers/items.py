@@ -217,12 +217,21 @@ def relocate_one(bridge: ResolveBridge, tl, old, record_rel=None, track_index=No
             imported_name = safe(lambda: comp.GetAttrs().get("COMPS_Name")) or safe(lambda: comp.name)
             if imported_name and imported_name != name:
                 safe(new.RenameFusionCompByName, imported_name, name)
+    summary = _summary(bridge, new, tl)
+    notes = []
+    if overlaps:
+        notes.append("same-track overlap: deleted first, grade not preserved")
+    if summary.get("start_rel") is not None and summary["start_rel"] != record_rel:
+        notes.append(f"Resolve pushed the item to frame {summary['start_rel']} (requested {record_rel}) - something else occupies that range on the track")
+    if summary.get("duration") is not None and summary["duration"] != new_len:
+        notes.append(f"Resolve trimmed the item to {summary['duration']} frames (requested {new_len}) - collision on the track")
     return {
         "ok": True,
-        "item": _summary(bridge, new, tl),
+        "item": summary,
         "grade_copied": grade_copied,
         "fusion_comps_restored": comps_restored,
-        "note": None if not overlaps else "same-track overlap: deleted first, grade not preserved",
+        "placed_as_requested": not any("pushed" in n or "trimmed" in n for n in notes),
+        "note": "; ".join(notes) if notes else None,
         "_delta": record_rel - snap["record_rel"],
     }
 

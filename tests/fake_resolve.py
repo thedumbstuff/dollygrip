@@ -580,7 +580,7 @@ class FakeInput:
         return {"INPS_Name": self.name, "INPS_ID": self.name, "INPB_Connected": self.name in self.tool.connections,
                 "INPID_InputControl": "TextEditControl" if self.name == "StyledText" else "SliderControl",
                 "INPS_DataType": "Text" if self.name in ("StyledText", "Font") else "Number",
-                "INPN_MinScale": 0.0, "INPN_MaxScale": 1.0, "INPN_Default": 0.08, "INPS_Page": page}
+                "INPN_MinScale": 0.0, "INPN_MaxScale": 1.0, "INPN_Default": 0.08, "INPS_ICS_ControlPage": page}
 
     def SetExpression(self, expr):
         if expr is None:

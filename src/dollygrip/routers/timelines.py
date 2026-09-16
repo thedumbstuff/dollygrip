@@ -308,7 +308,8 @@ def ripple_insert(body: RippleInsert, bridge: ResolveBridge = Depends(resolve_se
     or after that frame later by the clip's length - the Edit page's ripple
     insert, which the API lacks. Items are moved right-to-left via the same
     machinery as `relocate` (properties/markers/Fusion comps kept; grades kept
-    only for items whose new position does not overlap their old one)."""
+    only for items whose new position does not overlap their old one).
+    Generators/titles cannot be re-appended and are reported in `skipped`."""
     mp = bridge.media_pool()
     tl = bridge.current_timeline()
     start_abs = int(tl.GetStartFrame())
@@ -325,15 +326,20 @@ def ripple_insert(body: RippleInsert, bridge: ResolveBridge = Depends(resolve_se
         raise Rejected("Could not determine the clip length - pass start_frame/end_frame")
 
     track_type = "audio" if body.media_type == "audio" else "video"
-    affected = []
+    affected, skipped = [], []
     for tt, idx, item in bridge.iter_items(tl):
         if tt == "subtitle":
             continue
         if not body.all_tracks and (tt != track_type or idx != body.track_index):
             continue
         rel = int(item.GetStart()) - start_abs
-        if rel >= at:
-            affected.append((rel, item))
+        if rel < at:
+            continue
+        if safe(item.GetMediaPoolItem) is None:
+            # generators / titles / Fusion compositions cannot be re-appended - leave them and say so
+            skipped.append({"id": safe(item.GetUniqueId), "name": safe(item.GetName), "start_rel": rel, "reason": "no source clip (generator/title) - cannot be moved by the API"})
+            continue
+        affected.append((rel, item))
     moved = []
     for rel, item in sorted(affected, key=lambda x: -x[0]):
         r = relocate_one(bridge, tl, item, rel + length)
@@ -351,7 +357,7 @@ def ripple_insert(body: RippleInsert, bridge: ResolveBridge = Depends(resolve_se
     if not new:
         raise Rejected("Items were shifted but Resolve refused to append the clip at the insertion point")
     tt, idx = safe(new.GetTrackTypeAndIndex, default=[track_type, body.track_index]) or [track_type, body.track_index]
-    return {"ok": True, "inserted": item_summary(tt, idx, new, start_abs), "shift": length, "moved": moved}
+    return {"ok": True, "inserted": item_summary(tt, idx, new, start_abs), "shift": length, "moved": moved, "skipped": skipped}
 
 
 @router.post("/current/delete-items")
