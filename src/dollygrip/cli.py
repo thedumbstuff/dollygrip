@@ -26,12 +26,19 @@ def main(argv=None) -> int:
 
     sub.add_parser("doctor", help="Diagnose the connection to DaVinci Resolve")
 
+    mcp = sub.add_parser("mcp", help="Run as an MCP server over stdio (for Claude Code, Claude Desktop, Cursor...)")
+    mcp.add_argument("--allow-exec", action="store_true", help="Expose the exec_code tool (raw Python in Resolve)")
+    mcp.add_argument("--tags", default=None, help="Comma-separated OpenAPI tags to expose, e.g. 'timelines,timeline items,render'")
+    mcp.add_argument("--exclude-tags", default=None, help="Comma-separated tags to hide")
+
     args = parser.parse_args(argv)
 
     if args.command == "serve":
         return _serve(args)
     if args.command == "doctor":
         return _doctor()
+    if args.command == "mcp":
+        return _mcp(args)
     parser.print_help()
     return 2
 
@@ -51,6 +58,16 @@ def _serve(args) -> int:
     app = create_app(Settings(allow_exec=args.allow_exec, token=args.token))
     print(f"DollyGrip {__version__} - http://{args.host}:{args.port}/docs")
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    return 0
+
+
+def _mcp(args) -> int:
+    from .mcp_server import serve_stdio
+    from .server import Settings, create_app
+
+    split = lambda v: [t.strip() for t in v.split(",") if t.strip()] if v else None  # noqa: E731
+    app = create_app(Settings(allow_exec=args.allow_exec))
+    serve_stdio(app, include_tags=split(args.tags), exclude_tags=split(args.exclude_tags))
     return 0
 
 
