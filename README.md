@@ -75,7 +75,7 @@ JOB=$(curl -s -X POST localhost:4747/api/v1/render/jobs -H 'content-type: applic
 curl -X POST "localhost:4747/api/v1/render/jobs/$JOB/wait?timeout=900"
 ```
 
-More in [`examples/`](examples/) - including [`data_driven_titles.py`](examples/data_driven_titles.py), which styles and animates one Text+ per caption.
+More in [`examples/`](examples/) - including [`data_driven_titles.py`](examples/data_driven_titles.py), which styles and animates one Text+ per caption, and [`counting_cards.py`](examples/counting_cards.py), a complete kids' counting video made from nothing but API-built Fusion titles (background + animated digit + word + stars) and an offline TTS voiceover.
 
 ### Or as one recipe
 
