@@ -783,6 +783,7 @@ class FakeTimelineItem(Markable, Flaggable):
         self.track_type, self.track_index = track_type, track_index
         self.mpi, self.timeline = mpi, timeline
         self.source_start = source_start
+        self.link_group = None
         self.props = {"ZoomX": 1.0, "ZoomY": 1.0, "Pan": 0.0, "Tilt": 0.0, "Opacity": 100.0, "CompositeMode": 0, "RotationAngle": 0.0}
         self.enabled = True
         self.comps = []
@@ -847,7 +848,7 @@ class FakeTimelineItem(Markable, Flaggable):
         return [self.track_type, self.track_index]
 
     def GetLinkedItems(self):
-        return [it for it in self.timeline._all_items() if it is not self and it.mpi is self.mpi and self.mpi is not None]
+        return [it for it in self.timeline._all_items() if it is not self and self.link_group is not None and it.link_group == self.link_group]
 
     # properties
     def SetProperty(self, key, value=None):
@@ -1090,6 +1091,7 @@ class FakeTimeline(Markable):
         media_type = info.get("mediaType")
         kinds = ["video", "audio"] if media_type is None else (["video"] if media_type == 1 else ["audio"])
         created = None
+        group = _uid("link") if len(kinds) > 1 else None
         for kind in kinds:
             while len(self.tracks[kind]) < track_index:
                 self.tracks[kind].append(self._track(f"{kind.title()} {len(self.tracks[kind]) + 1}"))
@@ -1100,6 +1102,7 @@ class FakeTimeline(Markable):
             record = info.get("recordFrame")
             start = int(record) if record is not None else max([it.GetEnd() for it in track["items"]] + [self.START])
             item = FakeTimelineItem(mpi.GetName() if mpi else "item", start, duration, kind, track_index, mpi, self, int(s))
+            item.link_group = group
             track["items"].append(item)
             created = created or item
         return created

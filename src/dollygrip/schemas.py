@@ -439,6 +439,12 @@ class RelocateItem(BaseModel):
     start_frame: Optional[int] = Field(default=None, description="New source in-point, source-fps frames (default: keep)")
     end_frame: Optional[int] = Field(default=None, description="New source out-point, source-fps frames (default: keep)")
     ripple: bool = Field(default=False, description="Ripple-delete the old position")
+    with_linked: bool = Field(default=False, description="Also move the items linked to this one (e.g. the audio of an A/V clip) by the same offset")
+
+
+class RippleInsert(AppendItem):
+    record_frame: Optional[int] = Field(default=None, description="Insertion frame, 0-based from the timeline start (default: the playhead)")
+    all_tracks: bool = Field(default=True, description="Shift items on every track (false = only the target track)")
 
 
 class SplitItem(BaseModel):

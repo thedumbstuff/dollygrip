@@ -32,6 +32,7 @@ from ..schemas import (
     PatchTimeline,
     PatchTrack,
     ProjectSettings,
+    RippleInsert,
     SetCurrentTimeline,
     Timecode,
     TimelineFromClips,
@@ -39,7 +40,9 @@ from ..schemas import (
     VoiceIsolation,
 )
 from ..serialize import item_summary, safe, timeline_summary, track_summary
+from .items import relocate_one
 from .markers import mount_markers
+from .tools import timecode_to_frames
 
 router = APIRouter(prefix="/timelines", tags=["timelines"])
 
@@ -288,6 +291,67 @@ def append_items(body: AppendItems, bridge: ResolveBridge = Depends(resolve_sess
             }
         )
     return {"results": results, "all_ok": all(r["ok"] for r in results)}
+
+
+def playhead_rel(tl) -> int:
+    """Playhead position as a 0-based frame from the timeline start."""
+    tc = tl.GetCurrentTimecode() or tl.GetStartTimecode()
+    fps_setting = str(tl.GetSetting("timelineFrameRate") or "30")
+    drop = ";" in tc or "DF" in fps_setting.upper()
+    fps = float(fps_setting.upper().replace("DF", "").strip() or 30)
+    return timecode_to_frames(tc, fps, drop) - int(tl.GetStartFrame())
+
+
+@router.post("/current/ripple-insert")
+def ripple_insert(body: RippleInsert, bridge: ResolveBridge = Depends(resolve_session)):
+    """Insert a clip at a frame (default: the playhead) and push everything at
+    or after that frame later by the clip's length - the Edit page's ripple
+    insert, which the API lacks. Items are moved right-to-left via the same
+    machinery as `relocate` (properties/markers/Fusion comps kept; grades kept
+    only for items whose new position does not overlap their old one)."""
+    mp = bridge.media_pool()
+    tl = bridge.current_timeline()
+    start_abs = int(tl.GetStartFrame())
+    at = playhead_rel(tl) if body.record_frame is None else body.record_frame
+    clip = bridge.clip(body.clip_name)
+    if body.start_frame is not None and body.end_frame is not None:
+        length = body.end_frame - body.start_frame
+    else:
+        frames = float(clip.GetClipProperty("Frames") or 0)
+        clip_fps = float(clip.GetClipProperty("FPS") or 0) or None
+        tl_fps = float(str(tl.GetSetting("timelineFrameRate") or "30").upper().replace("DF", "").strip() or 30)
+        length = int(round(frames * (tl_fps / clip_fps))) if clip_fps else int(frames)
+    if length <= 0:
+        raise Rejected("Could not determine the clip length - pass start_frame/end_frame")
+
+    track_type = "audio" if body.media_type == "audio" else "video"
+    affected = []
+    for tt, idx, item in bridge.iter_items(tl):
+        if tt == "subtitle":
+            continue
+        if not body.all_tracks and (tt != track_type or idx != body.track_index):
+            continue
+        rel = int(item.GetStart()) - start_abs
+        if rel >= at:
+            affected.append((rel, item))
+    moved = []
+    for rel, item in sorted(affected, key=lambda x: -x[0]):
+        r = relocate_one(bridge, tl, item, rel + length)
+        moved.append({"id": r["item"]["id"], "start_rel": r["item"]["start_rel"], "grade_copied": r["grade_copied"]})
+
+    info = {"mediaPoolItem": clip, "trackIndex": body.track_index, "recordFrame": start_abs + at}
+    if body.start_frame is not None:
+        info["startFrame"] = body.start_frame
+    if body.end_frame is not None:
+        info["endFrame"] = body.end_frame
+    if body.media_type:
+        info["mediaType"] = 1 if body.media_type == "video" else 2
+    appended = mp.AppendToTimeline([info])
+    new = appended[0] if appended else None
+    if not new:
+        raise Rejected("Items were shifted but Resolve refused to append the clip at the insertion point")
+    tt, idx = safe(new.GetTrackTypeAndIndex, default=[track_type, body.track_index]) or [track_type, body.track_index]
+    return {"ok": True, "inserted": item_summary(tt, idx, new, start_abs), "shift": length, "moved": moved}
 
 
 @router.post("/current/delete-items")

@@ -175,25 +175,17 @@ def _reappend(bridge: ResolveBridge, tl, snap: dict, record_rel: int, track_inde
     return new
 
 
-@router.post("/{item_id}/relocate")
-def relocate_item(item_id: str, body: RelocateItem, bridge: ResolveBridge = Depends(resolve_session)):
-    """Move and/or trim an item. Resolve's API cannot edit an item in place, so
-    this re-appends the same source range at the new position, copies the
-    grade (CopyGrades) and Fusion comps (export/import) onto the new item,
-    restores Inspector properties/name/color/markers, then deletes the old
-    one. Caveats: same-track moves that overlap the old position are done
-    delete-first (grade is lost - Resolve has no grade read-back); linked
-    audio is not moved with a video item (relocate it separately)."""
+def relocate_one(bridge: ResolveBridge, tl, old, record_rel=None, track_index=None, source_start=None, source_end=None, ripple=False) -> dict:
+    """Re-create `old` at a new position/trim; copies grade + Fusion comps when
+    the new placement does not overlap the old one on the same track."""
     import os
     import tempfile
 
-    tl = bridge.current_timeline()
-    old = bridge.item(item_id, tl)
     snap = _snapshot(bridge, old, tl)
-    record_rel = snap["record_rel"] if body.record_frame is None else body.record_frame
-    track_index = snap["track_index"] if body.track_index is None else body.track_index
-    source_start = snap["source_start"] if body.start_frame is None else body.start_frame
-    source_end = snap["source_end"] if body.end_frame is None else body.end_frame
+    record_rel = snap["record_rel"] if record_rel is None else record_rel
+    track_index = snap["track_index"] if track_index is None else track_index
+    source_start = snap["source_start"] if source_start is None else source_start
+    source_end = snap["source_end"] if source_end is None else source_end
     if source_end is not None and source_start is not None and source_end < source_start:
         raise Rejected("end_frame must be >= start_frame")
     new_len = (source_end - source_start) if None not in (source_start, source_end) else int(old.GetDuration())
@@ -210,12 +202,12 @@ def relocate_item(item_id: str, body: RelocateItem, bridge: ResolveBridge = Depe
 
     grade_copied = False
     if overlaps:
-        require(tl.DeleteClips([old], body.ripple), "Resolve refused to delete the original item")
+        require(tl.DeleteClips([old], ripple), "Resolve refused to delete the original item")
         new = _reappend(bridge, tl, snap, record_rel, track_index, source_start, source_end)
     else:
         new = _reappend(bridge, tl, snap, record_rel, track_index, source_start, source_end)
         grade_copied = bool(safe(old.CopyGrades, [new]))
-        require(tl.DeleteClips([old], body.ripple), "Re-appended, but Resolve refused to delete the original item")
+        require(tl.DeleteClips([old], ripple), "Re-appended, but Resolve refused to delete the original item")
 
     comps_restored = 0
     for name, path in comp_files:
@@ -231,7 +223,33 @@ def relocate_item(item_id: str, body: RelocateItem, bridge: ResolveBridge = Depe
         "grade_copied": grade_copied,
         "fusion_comps_restored": comps_restored,
         "note": None if not overlaps else "same-track overlap: deleted first, grade not preserved",
+        "_delta": record_rel - snap["record_rel"],
     }
+
+
+@router.post("/{item_id}/relocate")
+def relocate_item(item_id: str, body: RelocateItem, bridge: ResolveBridge = Depends(resolve_session)):
+    """Move and/or trim an item. Resolve's API cannot edit an item in place, so
+    this re-appends the same source range at the new position, copies the
+    grade (CopyGrades) and Fusion comps (export/import) onto the new item,
+    restores Inspector properties/name/color/markers, then deletes the old
+    one. Caveats: same-track moves that overlap the old position are done
+    delete-first (grade is lost - Resolve has no grade read-back). With
+    `with_linked` the linked items (the audio of an A/V clip) move by the
+    same offset and get the same trim."""
+    tl = bridge.current_timeline()
+    old = bridge.item(item_id, tl)
+    linked = list(safe(old.GetLinkedItems, default=[]) or []) if body.with_linked else []
+    result = relocate_one(bridge, tl, old, body.record_frame, body.track_index, body.start_frame, body.end_frame, body.ripple)
+    delta = result.pop("_delta")
+    moved_linked = []
+    for item in linked:
+        rel = int(item.GetStart()) - int(tl.GetStartFrame())
+        r = relocate_one(bridge, tl, item, rel + delta, None, body.start_frame, body.end_frame, body.ripple)
+        r.pop("_delta", None)
+        moved_linked.append(r["item"])
+    result["linked_items"] = moved_linked
+    return result
 
 
 @router.post("/{item_id}/split")

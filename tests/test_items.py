@@ -134,3 +134,16 @@ def test_split_item(client, timeline):
     assert right["start_rel"] == 100 and right["source_start"] == 100 and right["end_rel"] == 240
     assert client.post(f"{ITEMS}/{right['id']}/split", json={"frame": 100}).status_code == 422  # on the boundary
     assert client.post(f"{ITEMS}/{right['id']}/split", json={"frame": 999}).status_code == 422
+
+
+def test_relocate_with_linked_audio(client, timeline):
+    # an A/V append (no media_type) creates linked video + audio items on V3/A3
+    r = client.post(f"{V1}/timelines/current/append", json={"items": [{"clip_name": "spokes.mp4", "track_index": 3, "record_frame": 50}]})
+    vid = r.json()["results"][0]["item_id"]
+    assert client.get(f"{ITEMS}/{vid}/linked").json()["items"][0]["track_type"] == "audio"
+    r = client.post(f"{ITEMS}/{vid}/relocate", json={"record_frame": 300, "with_linked": True})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["item"]["start_rel"] == 300 and len(body["linked_items"]) == 1
+    assert body["linked_items"][0]["track_type"] == "audio" and body["linked_items"][0]["start_rel"] == 300
+    assert not any(it.GetStart() == 108050 for it in timeline._all_items())

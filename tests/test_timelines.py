@@ -169,3 +169,25 @@ def test_timeline_markers(client, timeline):
     assert client.delete(f"{V1}/timelines/current/markers", params={"color": "Red"}).json()["markers"][0]["frame"] == 96
     assert client.delete(f"{V1}/timelines/current/markers", params={"custom_data": "beat-2"}).json()["markers"] == []
     assert client.delete(f"{V1}/timelines/current/markers").status_code == 404
+
+
+def test_ripple_insert_at_playhead_shifts_everything(client, timeline):
+    # playhead 01:00:01:00 at 30fps -> rel 30; art.mov (60 frames) at V2 rel 30 must shift; spokes at 0 must not
+    client.put(f"{V1}/timelines/current/playhead", json={"timecode": "01:00:01:00"})
+    r = client.post(f"{V1}/timelines/current/ripple-insert", json={"clip_name": "art.mov", "track_index": 1, "start_frame": 0, "end_frame": 45, "media_type": "video"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["shift"] == 45 and body["inserted"]["start_rel"] == 30 and body["inserted"]["track_index"] == 1
+    starts = sorted((i["track_type"], i["track_index"], i["start_rel"]) for i in client.get(f"{V1}/timelines/current/items").json()["items"])
+    assert ("video", 2, 75) in starts and ("video", 1, 0) in starts and ("video", 1, 30) in starts
+    assert len(body["moved"]) == 1
+
+
+def test_ripple_insert_length_from_clip_and_single_track(client, timeline):
+    # music.wav: 240 frames @24fps on a 30fps timeline -> 300 timeline frames; only the audio track shifts
+    r = client.post(f"{V1}/timelines/current/ripple-insert", json={"clip_name": "music.wav", "track_index": 1, "record_frame": 0, "media_type": "audio", "all_tracks": False})
+    assert r.status_code == 200, r.text
+    assert r.json()["shift"] == 300 and r.json()["moved"][0]["start_rel"] == 300
+    video_starts = [i["start_rel"] for i in client.get(f"{V1}/timelines/current/items", params={"track_type": "video"}).json()["items"]]
+    assert sorted(video_starts) == [0, 30]  # video untouched
+    assert client.post(f"{V1}/timelines/current/ripple-insert", json={"clip_name": "ghost"}).status_code == 404
