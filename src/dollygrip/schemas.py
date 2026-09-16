@@ -596,6 +596,7 @@ class Keyframe(BaseModel):
 class ToolKeyframes(BaseModel):
     input: str
     keyframes: List[Keyframe]
+    replace: bool = Field(default=True, description="Replace every existing key on the input (false = merge into the existing spline)")
 
 
 class ToolExpression(BaseModel):

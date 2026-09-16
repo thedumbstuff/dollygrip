@@ -562,11 +562,32 @@ class FakeGraph:
         return True
 
 
+class FakeSpline:
+    """A BezierSpline modifier attached to one input."""
+
+    def __init__(self, tool=None, name=None):
+        self.tool, self.name = tool, name
+
+    def SetKeyFrames(self, keys, replace=True):
+        target = self.tool.keyframes.setdefault(self.name, {})
+        if replace:
+            target.clear()
+        for frame, val in keys.items():
+            target[int(frame) if float(frame).is_integer() else frame] = val[1] if isinstance(val, dict) and set(val) == {1} else val
+        return True
+
+    def GetTool(self):
+        return self
+
+
 class FakeInput:
     """A Fusion Input proxy: supports `inp[frame] = value` keyframing."""
 
     def __init__(self, tool, name):
         self.tool, self.name = tool, name
+
+    def GetConnectedOutput(self):
+        return self.tool.splines.get(self.name)
 
     def __setitem__(self, frame, value):
         self.tool.keyframes.setdefault(self.name, {})[frame] = value
@@ -600,6 +621,7 @@ class FakeTool:
         self.keyframes = {}
         self.connections = {}
         self.expressions = {}
+        self.splines = {}
         self.pass_through = False
         self.deleted = False
 
@@ -615,7 +637,16 @@ class FakeTool:
         return True
 
     def GetInput(self, name, time=None):
+        if time is not None and name in self.keyframes and time in self.keyframes[name]:
+            return self.keyframes[name][time]
         return self.inputs.get(name)
+
+    def __setattr__(self, name, value):
+        if isinstance(value, FakeSpline):  # `tool.Input = comp.BezierSpline()` attaches the modifier
+            value.tool, value.name = self, name
+            self.splines[name] = value
+            return
+        object.__setattr__(self, name, value)
 
     def SetInput(self, name, value, time=None):
         if time is not None:
@@ -635,7 +666,7 @@ class FakeTool:
         self.comp.tools.pop(self.Name, None)
 
     def __getattr__(self, name):
-        if name.startswith("_") or name in ("comp", "reg_id", "Name", "ID", "inputs", "keyframes", "connections", "expressions", "pass_through", "deleted"):
+        if name.startswith("_") or name in ("comp", "reg_id", "Name", "ID", "inputs", "keyframes", "connections", "expressions", "splines", "pass_through", "deleted"):
             raise AttributeError(name)
         return FakeInput(self, name)
 
@@ -690,7 +721,7 @@ class FakeComp:
         return True
 
     def BezierSpline(self):
-        return object()
+        return FakeSpline()
 
 
 class FakeGalleryStill:

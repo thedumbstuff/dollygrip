@@ -149,3 +149,29 @@ can; the rest you need to know when you reach for `/exec` or extend the API.
   ★ (U+2605); put symbols in their own Text+ using `Segoe UI Symbol`.
 - **Windows can voice a script offline**: `System.Speech.Synthesis` (SAPI
   voices Zira/David) writes WAVs that import straight into Resolve.
+
+## Fusion animation (live on Resolve Studio 21.0.4, 2026-09-16)
+
+- **`tool.Input[frame] = value` on a STATIC input does not animate** - it
+  writes a static value; the last write wins. The digit "pop-in" rendered as
+  a full-size digit and a Blend fade ended up as Blend = 0 (stars vanished).
+- **Attaching a spline adds a stray key.** `tool.Input = comp.BezierSpline()`
+  animates the input but Fusion drops a key at the comp's CURRENT time holding
+  the old static value (a 0 at frame 5 in our case). Set all keys wholesale
+  afterwards: `spline = tool.Input.GetConnectedOutput().GetTool();
+  spline.SetKeyFrames({frame: {1: value}, ...}, True)` (True = replace).
+  `POST .../tools/{tool}/keyframes` now does exactly this.
+- **Expressions are the simplest fades**: `iif(time<8, time/8, iif(time>141,
+  (149-time)/8, 1))` on `Merge.Blend` interpolates perfectly; no spline needed.
+- **`Merge.Blend` fades only the foreground.** To fade a whole card, put a
+  black `Background` + final `Merge` at the end of the chain and fade that.
+- **Resolve froze hard (UI not responding, scripting call never returned)**
+  once on a raw `SetInput("Blend", 1.0)` into a card comp while background
+  Fusion rendering was active. Since then: call
+  `POST /system/background-tasks/disable` before heavy comp edits, pace
+  writes, and drive the gateway with client timeouts so a frozen Resolve
+  cannot wedge your session. Restarting Resolve recovered; the saved project
+  was intact.
+- **Measure audio stems BEFORE importing** (`ffmpeg -af volumedetect`). A
+  synthesized bed came out at -69 dB and was inaudible in the render - Resolve
+  will not tell you.

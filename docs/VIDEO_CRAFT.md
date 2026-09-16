@@ -46,11 +46,12 @@ the result looks designed rather than generated.
 ## 2. Recipes for the parts the API cannot do directly
 
 **Fade a Fusion-title card in and out** (transitions are not exposed for
-clips; inside a comp they are just keyframes). With the card's last Merge
-named `M3` and the card 150 frames long:
+clips; inside a comp they are just keyframes). `Merge.Blend` fades only the
+foreground, so end the chain with a black `Background` + a final `Merge`
+(`M4`) and fade THAT. With the card 150 frames long:
 
 ```json
-{"op": "set_tool_keyframes", "args": {"item_id": "...", "comp": "1", "tool": "M3", "input": "Blend",
+{"op": "set_tool_keyframes", "args": {"item_id": "...", "comp": "1", "tool": "M4", "input": "Blend",
   "keyframes": [{"frame": 0, "value": 0.0}, {"frame": 8, "value": 1.0}, {"frame": 141, "value": 1.0}, {"frame": 149, "value": 0.0}]}}
 ```
 
@@ -71,7 +72,7 @@ ffmpeg -y -i music.mp3 -t 60.2 -af "volume=-20dB,afade=t=in:d=1,afade=t=out:st=5
 # voice: broadcast loudness, gentle limiter
 ffmpeg -y -i voice.wav -af "loudnorm=I=-16:TP=-1.5:LRA=7" voice_norm.wav
 ```
-then `import_media` both and `append_items` (`media_type: audio`) on A1/A2.
+then MEASURE them (`ffmpeg -i bed.wav -af volumedetect -f null -`: bed mean around -30 dB, voice around -20 dB, pops peaking around -10 dB) and only then `import_media` + `append_items` (`media_type: audio`) on A1/A2. A stem that is too quiet renders silently and nothing warns you.
 
 **Silence padding for TTS lines**: `ffmpeg -i line.wav -af "adelay=400|400" line_padded.wav`
 (0.4 s lead-in so the visual lands first).
@@ -93,12 +94,17 @@ then `import_media` both and `append_items` (`media_type: audio`) on A1/A2.
 
 1. `list_items`: every card/shot starts where planned, no gaps, no item pushed
    or trimmed (`relocate`/`ripple_insert` responses say `placed_as_requested`).
+   For animation, read a value back mid-way (`set_tool_keyframes` returns
+   `values_at_keys`; `exec` can sample `GetInput(name, frame)`) - a keyframe
+   that did not take renders as a static frame.
+0. Before heavy Fusion edits: `disable_background_tasks`, and give your HTTP
+   client a timeout - a frozen Resolve must not freeze you.
 2. Render with `add_job` + `wait_for_job` (or stream `job_events`), then probe
    the file: duration matches the timeline, resolution and fps match the spec.
 3. Extract frames at the start, middle and end (`ffmpeg -ss T -frames:v 1`)
    and LOOK at them: glyph boxes, text over the safe margin, wrong colours,
    an element missing its entrance.
-4. Listen once: voice audible over the bed, no clipping, music fades out.
+4. Measure the mix (`volumedetect` on the render, and on a window between voice lines to hear the bed alone); then listen once: voice over bed, no clipping, music fades out.
 5. Save the project (`save_project`) and report the file path and the project
    name so a human can open it in Resolve and adjust.
 

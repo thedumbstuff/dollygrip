@@ -265,19 +265,41 @@ def connect_tool_input(item_id: str, comp: str, tool: str, body: ConnectInput, b
     return {"ok": True}
 
 
+def animate_input(comp, tool, input_name: str, keyframes: dict, replace: bool = True) -> dict:
+    """Keyframe `tool.<input>` properly. A bare `tool.Input[frame] = value`
+    writes a STATIC value unless a spline is attached, and attaching one adds a
+    stray key at the comp's current time - so: attach a BezierSpline if the
+    input is not animated, then set all keys wholesale with SetKeyFrames."""
+    inp = getattr(tool, input_name)
+    out = safe(inp.GetConnectedOutput)
+    if out is None:
+        setattr(tool, input_name, comp.BezierSpline())
+        inp = getattr(tool, input_name)
+        out = safe(inp.GetConnectedOutput)
+    spline = safe(out.GetTool) if out else None
+    keys = {float(frame): (value if isinstance(value, dict) else {1: value}) for frame, value in keyframes.items()}
+    if spline is not None and hasattr(spline, "SetKeyFrames"):
+        spline.SetKeyFrames(keys, replace)
+        return {"mode": "spline", "keys": len(keys)}
+    for frame, value in keyframes.items():  # last resort: frame-indexed writes
+        inp[frame] = value
+    return {"mode": "indexed", "keys": len(keys)}
+
+
 @router.post("/items/{item_id}/comps/{comp}/tools/{tool}/keyframes")
 def set_tool_keyframes(item_id: str, comp: str, tool: str, body: ToolKeyframes, bridge: ResolveBridge = Depends(resolve_session)):
-    """Animate an input: `tool.<Input>[frame] = value` for each keyframe
-    (Fusion creates the BezierSpline on first keyed write)."""
-    t = _tool(_comp(bridge, item_id, comp), tool)
-    results = []
-    for kf in body.keyframes:
-        try:
-            getattr(t, body.input)[kf.frame] = _fusion_value(kf.value)
-            results.append({"frame": kf.frame, "ok": True})
-        except Exception as e:
-            results.append({"frame": kf.frame, "ok": False, "error": f"{type(e).__name__}: {e}"})
-    return {"results": results, "all_ok": all(r["ok"] for r in results)}
+    """Animate an input with real keyframes: attaches a BezierSpline when the
+    input is static and sets all keys at once (replacing existing ones by
+    default). Lists of 2-4 numbers become point/colour keys. Tip: for simple
+    fades an expression is just as good - see PUT .../expression."""
+    c = _comp(bridge, item_id, comp)
+    t = _tool(c, tool)
+    try:
+        info = animate_input(c, t, body.input, {kf.frame: _fusion_value(kf.value) for kf in body.keyframes}, body.replace)
+    except Exception as e:
+        raise Rejected(f"Could not keyframe {tool}.{body.input}: {type(e).__name__}: {e}") from e
+    values = {kf.frame: jsonable(safe(t.GetInput, body.input, kf.frame)) for kf in body.keyframes}
+    return {"ok": True, **info, "values_at_keys": values, "all_ok": True, "results": [{"frame": kf.frame, "ok": True} for kf in body.keyframes]}
 
 
 # -- Text+ ------------------------------------------------------------------------------
