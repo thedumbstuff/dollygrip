@@ -10,4 +10,4 @@ build/
 htmlcov/
 .DS_Store
 .idea/
-*.png
+/*.png

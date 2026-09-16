@@ -1,6 +1,10 @@
+<p align="center">
+  <a href="https://github.com/thedumbstuff"><img src="docs/assets/dumbstuff_banner.jpg" alt="thedumbstuff - a small collection of ridiculous ideas for a brighter tomorrow" width="720"></a>
+</p>
+
 # DollyGrip
 
-**A local REST gateway and MCP server for the DaVinci Resolve scripting API.**
+**A local REST gateway and MCP server for the DaVinci Resolve scripting API.** An open-source project by [thedumbstuff](https://github.com/thedumbstuff).
 
 On a film set, the dolly grip is the crew member who physically drives the camera so the director gets the shot. DollyGrip does that for DaVinci Resolve: it sits next to a running Resolve Studio and exposes its scripting API as clean, documented HTTP endpoints (and, with `dollygrip mcp`, as MCP tools) - so any language, tool, or AI agent can drive your edit, grade, Fusion titles and delivery.
 

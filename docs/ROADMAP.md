@@ -44,8 +44,6 @@ render + wait, OTIO/EDL/FCPXML export, project export).
   overrides, expression setting.
 - **MCP ergonomics**: profiles exist (`--profile editor|colorist|motion|delivery|core`);
   next: MCP resources for the OpenAPI doc and gotchas so agents can self-serve.
-- **Cloud projects** (`CreateCloudProject` & co.) - unverified, needs a
-  Blackmagic Cloud account.
 - **v2 contract pass**: consistent `{ok, data}` envelopes once v1 usage
   settles (v1 stays frozen).
 
