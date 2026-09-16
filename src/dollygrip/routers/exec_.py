@@ -34,10 +34,13 @@ def exec_code(body: ExecCode, request: Request, bridge: ResolveBridge = Depends(
     project = pm.GetCurrentProject() if pm else None
     namespace = {
         "resolve": resolve,
+        "fusion": _quiet(resolve.Fusion),
+        "media_storage": _quiet(resolve.GetMediaStorage),
         "project_manager": pm,
         "project": project,
         "media_pool": project.GetMediaPool() if project else None,
         "timeline": project.GetCurrentTimeline() if project else None,
+        "gallery": _quiet(project.GetGallery) if project else None,
         "result": None,
     }
     stdout = io.StringIO()
@@ -48,6 +51,13 @@ def exec_code(body: ExecCode, request: Request, bridge: ResolveBridge = Depends(
         return {"ok": False, "error": f"{type(e).__name__}: {e}", "stdout": stdout.getvalue()}
     result = namespace.get("result")
     return {"ok": True, "result": result if _jsonable(result) else repr(result), "stdout": stdout.getvalue()}
+
+
+def _quiet(fn):
+    try:
+        return fn()
+    except Exception:
+        return None
 
 
 def _jsonable(value) -> bool:

@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from . import __version__
 from .bridge import NothingOpen, NotFound, Rejected, ResolveBridge, ResolveUnavailable
-from .routers import exec_, mediapool, projects, render, system, timelines
+from .routers import color, exec_, fusion, items, mediapool, projects, render, system, timelines, tools
 
 API_PREFIX = "/api/v1"
 
@@ -61,7 +61,18 @@ def create_app(settings: Optional[Settings] = None, bridge: Optional[ResolveBrid
     async def _rejected(request: Request, exc: Rejected):
         return JSONResponse(status_code=422, content={"detail": str(exc)})
 
-    for r in (system.router, projects.router, mediapool.router, timelines.router, render.router, exec_.router):
+    for r in (
+        system.router,
+        projects.router,
+        mediapool.router,
+        timelines.router,
+        items.router,
+        color.router,
+        fusion.router,
+        render.router,
+        tools.router,
+        exec_.router,
+    ):
         app.include_router(r, prefix=API_PREFIX)
 
     return app

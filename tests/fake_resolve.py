@@ -682,9 +682,9 @@ class FakeGalleryStill:
 
 
 class FakeAlbum:
-    def __init__(self, name, kind="still"):
+    def __init__(self, name, kind="still", stills=None):
         self.name, self.kind = name, kind
-        self.stills = [FakeGalleryStill("shot 1")] if kind == "still" else []
+        self.stills = stills or []
         self.exported = None
 
     def GetStills(self):
@@ -712,7 +712,7 @@ class FakeAlbum:
 
 class FakeGallery:
     def __init__(self):
-        self.still_albums = [FakeAlbum("Stills")]
+        self.still_albums = [FakeAlbum("Stills", stills=[FakeGalleryStill("shot 1")])]
         self.pg_albums = [FakeAlbum("PowerGrade 1", "powergrade")]
         self.current = self.still_albums[0]
 
@@ -1469,7 +1469,11 @@ class FakeProject:
         return job_id
 
     def StartRendering(self, *args, **kwargs):
-        ids = list(self.jobs) if not args or args == ([],) else (args[0] if isinstance(args[0], list) else list(args))
+        # forms: (), (bool), ([ids]), ([ids], bool), (id1, id2, ...)
+        if not args or isinstance(args[0], bool) or args[0] == []:
+            ids = list(self.jobs)
+        else:
+            ids = args[0] if isinstance(args[0], list) else list(args)
         for job_id in ids:
             if job_id in self.jobs:
                 self.jobs[job_id] = {"JobStatus": "Complete", "CompletionPercentage": 100}
