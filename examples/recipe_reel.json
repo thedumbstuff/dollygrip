@@ -1,0 +1,90 @@
+{
+  "steps": [
+    {
+      "name": "bin",
+      "op": "set_current_folder",
+      "args": {
+        "path": "auto-edits",
+        "create": true
+      }
+    },
+    {
+      "name": "import",
+      "op": "import_media",
+      "args": {
+        "paths": [
+          "D:/shoot/interview.mp4",
+          "D:/shoot/broll.mov"
+        ]
+      }
+    },
+    {
+      "name": "tl",
+      "op": "create_timeline",
+      "args": {
+        "name": "reel-v1",
+        "width": 1080,
+        "height": 1920,
+        "fps": 30,
+        "extra_video_tracks": 1
+      }
+    },
+    {
+      "name": "cut",
+      "op": "append_items",
+      "args": {
+        "items": [
+          {
+            "clip_name": "interview.mp4",
+            "record_frame": 0
+          },
+          {
+            "clip_name": "broll.mov",
+            "track_index": 2,
+            "record_frame": 90
+          }
+        ]
+      }
+    },
+    {
+      "name": "look",
+      "op": "patch_item",
+      "args": {
+        "item_id": "{{ steps.cut.results[1].item_id }}",
+        "properties": {
+          "Opacity": 80
+        }
+      }
+    },
+    {
+      "name": "title",
+      "op": "insert_generator",
+      "args": {
+        "kind": "fusion_title",
+        "name": "Text+",
+        "text": "Homework, but with a tutor"
+      }
+    },
+    {
+      "name": "render",
+      "op": "add_job",
+      "args": {
+        "preset": "H.264 Master",
+        "settings": {
+          "TargetDir": "D:/out",
+          "CustomName": "reel-v1",
+          "SelectAllFrames": true
+        }
+      }
+    },
+    {
+      "name": "wait",
+      "op": "wait_for_job",
+      "args": {
+        "job_id": "{{ steps.render.job_id }}",
+        "timeout": 900
+      }
+    }
+  ],
+  "stop_on_error": true
+}

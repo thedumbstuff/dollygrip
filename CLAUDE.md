@@ -7,21 +7,23 @@ Guidance for Claude Code when working in this repo.
 **DollyGrip** is an open-source local REST gateway (and MCP server) for the DaVinci Resolve
 scripting API: a FastAPI app (`127.0.0.1:4747`) that lets any HTTP client - shell, Node, n8n,
 CI, AI agents - drive a running Resolve Studio. Swagger at `/docs`, everything under `/api/v1`
-(287 operations as of v0.3). `dollygrip mcp` exposes the same operations as MCP tools.
+(300+ operations as of v0.4). `dollygrip mcp` exposes the same operations as MCP tools.
 
-**The standing goal**: everything a human can do in Resolve, reachable over HTTP. v0.3 covers
-every method in Blackmagic's scripting README for Resolve 21 plus the (undocumented) Fusion
-comp/tool API. `docs/ROADMAP.md` lists what is left (composite edit ops, recipes, SSE progress,
-Fusion depth, MCP profiles). Born from a real production pipeline (multi-track vertical reels).
+**The standing goal**: everything a human can do in Resolve, reachable over HTTP. v0.4 covers
+every method in Blackmagic's scripting README for Resolve 21, the (undocumented) Fusion
+comp/tool API, composite edits the API lacks (relocate/split/ripple-insert), recipes, SSE render
+progress and MCP profiles/resources. `docs/ROADMAP.md` lists what is left (retime, AI-analysis
+progress, Fusion macro import, recipe library). Born from a real production pipeline.
 
 ## Commands
 
 ```bash
 uv sync --extra mcp     # deps incl. dev group + the optional MCP server (uv, NOT pip; Python pinned 3.13 - see traps)
-uv run pytest -q        # ~100 tests against an in-memory fake Resolve - no install needed
+uv run pytest -q        # ~120 tests against an in-memory fake Resolve - no install needed
 uv run dollygrip doctor # diagnose the Resolve connection (safe with Resolve down)
 uv run dollygrip serve [--allow-exec] [--token X] [--port 4747]
-uv run dollygrip mcp [--tags timelines,render] [--allow-exec]   # stdio MCP server
+uv run dollygrip mcp [--profile editor] [--tags timelines,render] [--allow-exec]   # stdio MCP server
+uv run dollygrip run recipe.json [--dry-run]                       # run a pipeline without a server
 ```
 
 No linters are configured; pytest is the only gate. Commit in logical chunks; never push
@@ -42,11 +44,15 @@ src/dollygrip/
                  (ResolveUnavailable 503, NothingOpen 409, NotFound 404, Rejected 422),
                  operationId = function name (must be unique - test_contract enforces)
   schemas.py     pydantic REQUEST models only - responses stay loose dicts
-  routers/       system (+storage), projects, mediapool, timelines, items, markers (factory,
-                 mounted 3x), color (graph factory mounted 4x, groups, gallery), fusion, render,
-                 tools (offline timecode), exec_
-  mcp_server.py  OpenAPI -> MCP tools (name = operationId), in-process ASGI dispatch, mcp 1.x/2.x
-  cli.py         argparse: serve, doctor, mcp
+  routers/       system (+storage), projects, mediapool, timelines (+ripple-insert), items
+                 (+relocate/split composites), markers (factory, mounted 3x), color (graph factory
+                 mounted 4x, groups, gallery), fusion (+input discovery/expressions), render (+SSE
+                 events), recipes, tools (offline timecode), exec_
+  mcp_server.py  OpenAPI -> MCP tools (name = operationId) + resources, in-process ASGI dispatch,
+                 mcp 1.x/2.x, PROFILES (curated tag sets)
+  recipes.py     run_recipe: ordered steps of operations with {{ steps.name.path }} templating,
+                 dispatched in-process through the app (routers/recipes.py exposes POST /recipes/run)
+  cli.py         argparse: serve, doctor, mcp, run
 tests/fake_resolve.py  FakeResolve - the in-memory model of the whole scripting object graph
 tests/conftest.py      fixtures (client, fake_resolve, project, timeline, item_ids helper)
 docs/GOTCHAS.md        the hard-won Resolve API traps ledger (append every new one)

@@ -25,7 +25,7 @@ Resolve's Python scripting API is powerful but awkward to reach: it needs the ri
 
 DollyGrip turns all of that into `curl` (or an MCP tool call):
 
-- **The whole scripting surface** - 287 typed operations covering every object in Blackmagic's API for Resolve 21 (project manager, media pool, timelines, timeline items, markers, color versions / node graphs / groups / gallery, Fusion compositions, render queue, presets, Media Storage, Studio AI features) - plus the undocumented Fusion comp/tool API for data-driven Text+ titles.
+- **The whole scripting surface** - 300+ typed operations covering every object in Blackmagic's API for Resolve 21 (project manager, media pool, timelines, timeline items, markers, color versions / node graphs / groups / gallery, Fusion compositions, render queue, presets, Media Storage, Studio AI features) - plus the undocumented Fusion comp/tool API for data-driven Text+ titles.
 - **Auto-discovery** - finds the scripting module on Windows / macOS / Linux in the documented install paths; `RESOLVE_SCRIPT_API` / `RESOLVE_SCRIPT_LIB` still win if you set them.
 - **One persistent connection** - lazily connected, probed per request, transparently reconnects when Resolve restarts, serialized behind a lock (the fusionscript handle is not thread-safe).
 - **Crash-proof discovery** - fusionscript segfaults (no exception - the interpreter dies) on Python builds it dislikes; DollyGrip proves the import in a sacrificial subprocess first, so the gateway survives and answers 503 with a hint instead of dying, and `dollygrip doctor` scans your interpreters for one that works.
@@ -76,6 +76,31 @@ curl -X POST "localhost:4747/api/v1/render/jobs/$JOB/wait?timeout=900"
 
 More in [`examples/`](examples/) - including [`data_driven_titles.py`](examples/data_driven_titles.py), which styles and animates one Text+ per caption.
 
+### Or as one recipe
+
+The same pipeline as a single call - each step is any operation by name, and later steps can reference earlier results:
+
+```bash
+curl -X POST localhost:4747/api/v1/recipes/run -H 'content-type: application/json' -d @examples/recipe_reel.json
+# or without a server at all:
+dollygrip run examples/recipe_reel.json
+```
+
+```json
+{"steps": [
+  {"name": "bin",    "op": "set_current_folder", "args": {"path": "auto-edits", "create": true}},
+  {"name": "import", "op": "import_media",       "args": {"paths": ["D:/shoot/interview.mp4", "D:/shoot/broll.mov"]}},
+  {"name": "tl",     "op": "create_timeline",    "args": {"name": "reel-v1", "width": 1080, "height": 1920, "fps": 30, "extra_video_tracks": 1}},
+  {"name": "cut",    "op": "append_items",       "args": {"items": [{"clip_name": "interview.mp4", "record_frame": 0}, {"clip_name": "broll.mov", "track_index": 2, "record_frame": 90}]}},
+  {"name": "look",   "op": "patch_item",         "args": {"item_id": "{{ steps.cut.results[1].item_id }}", "properties": {"Opacity": 80}}},
+  {"name": "title",  "op": "insert_generator",   "args": {"kind": "fusion_title", "name": "Text+", "text": "Homework, but with a tutor"}},
+  {"name": "render", "op": "add_job",            "args": {"preset": "H.264 Master", "settings": {"TargetDir": "D:/out", "CustomName": "reel-v1", "SelectAllFrames": true}}},
+  {"name": "wait",   "op": "wait_for_job",       "args": {"job_id": "{{ steps.render.job_id }}", "timeout": 900}}
+]}
+```
+
+`dry_run: true` returns the resolved plan without touching Resolve; the `run` MCP tool exposes the same thing to agents, so Claude can plan a whole edit and execute it in one call.
+
 ## Using DollyGrip with Claude
 
 DollyGrip was built so an AI agent can operate Resolve like an editor, colorist and Fusion artist. Three ways to wire it up:
@@ -108,6 +133,8 @@ claude mcp add dollygrip -- dollygrip mcp --tags "projects,mediapool,timelines,t
 ```
 
 Add `--allow-exec` only if you want Claude to be able to run arbitrary Python inside Resolve via the `exec_code` tool.
+
+The server also publishes MCP **resources** Claude can read to self-serve: `dollygrip://openapi.json`, `dollygrip://operations` (every op with its arguments), and from a checkout `dollygrip://gotchas` and `dollygrip://readme`. The `run` tool takes a whole recipe, so a multi-step edit is one tool call.
 
 ### 2. Claude Desktop (or any MCP client)
 
@@ -152,23 +179,27 @@ Timeline items are addressed by the `id` from /timelines/current/items; clips by
 | "Deliver a TikTok and a YouTube version" | `add_job` with presets → `wait_for_job` |
 | "Save a .drx of every graded clip" | `grab_stills` → `export_stills` |
 | "Animate the title size in over 10 frames" | `set_tool_keyframes` on the Text+ tool |
+| "What can I tweak on this lower-third template?" | `list_tool_inputs` (control type, range, default per parameter) |
+| "Insert this shot at the playhead and push everything down" | `ripple_insert` |
+| "Do the whole rough cut, title and export in one go" | `run` (a recipe) |
 
 Things the Resolve API itself does not expose (so neither can any agent): building color nodes or reading grades back, the Fairlight mixer, Edit-page keyframes. Moving/trimming/splitting an item in place is not native either - DollyGrip's `relocate` and `split` rebuild the item for you (grade preserved when the move does not overlap itself on the same track). `/exec` covers the rest.
 
 ## API surface (v1)
 
-287 operations under `/api/v1`; every request/response shape is in the interactive docs at `/docs`. By area:
+300+ operations under `/api/v1`; every request/response shape is in the interactive docs at `/docs`. By area:
 
 | Area | Highlights |
 |---|---|
 | System | `health` · `system/info` · `system/constants` · `system/page` · layout & preference presets · `system/quit` (confirm) · Media Storage: `storage/volumes`, `storage/files`, `storage/add-to-mediapool` |
 | Projects | list/create/open/rename/save/close/delete · settings · presets · project folders · import/export/archive/restore · databases · Fairlight presets · AI speech generation |
 | Media pool | bins (tree/create/move/delete/export/import .drb) · clips by id or name (properties, metadata, color, flags, markers, mark in/out) · import files / image sequences / subclips · proxies · relink/unlink · replace · mattes · audio sync · stereo · selection · metadata CSV · transcription / classification / deblur / IntelliSearch / slate |
-| Timelines | list/create/from-clips/import (AAF/EDL/XML/FCPXML/DRT/OTIO) · settings · tracks (add/rename/lock/enable/delete) · `append` · delete/link items · compound & Fusion clips · generators / titles / **Fusion Text+ with text** · playhead · mark in/out · markers · export (17 formats) · duplicate/delete · stills · thumbnail (JSON or PNG) · auto subtitles · scene cuts · voice isolation · Dolby Vision |
-| Timeline items | list (with 0-based frames) · get/patch (name, enabled, color, **all Inspector properties**) · delete (ripple) · **relocate** (move/trim - re-append preserving properties, markers, Fusion comps and, when possible, the grade) · **split** · flags · markers · linked · audio mapping · takes · stabilize · smart reframe · magic mask · caches · burn-in |
+| Timelines | list/create/from-clips/import (AAF/EDL/XML/FCPXML/DRT/OTIO) · settings · tracks (add/rename/lock/enable/delete) · `append` · **ripple-insert** at the playhead · delete/link items · compound & Fusion clips · generators / titles / **Fusion Text+ with text** · playhead · mark in/out · markers · export (17 formats) · duplicate/delete · stills · thumbnail (JSON or PNG) · auto subtitles · scene cuts · voice isolation · Dolby Vision |
+| Timeline items | list (with 0-based frames) · get/patch (name, enabled, color, **all Inspector properties**) · delete (ripple) · **relocate** (move/trim, optionally with linked audio - re-append preserving properties, markers, Fusion comps and, when possible, the grade) · **split** · flags · markers · linked · audio mapping · takes · stabilize · smart reframe · magic mask · caches · burn-in |
 | Color | versions · CDL · copy grades · LUT export · node graphs (clip / timeline / group pre+post: LUT, cache, enable, DRX, reset) · color groups · gallery albums & stills (import/export/label/delete) · export frame · keyframe mode |
-| Fusion | comps (list/add/import/rename/load/export/delete) · tools (list/add/get/delete) · inputs · connect · **keyframes** · `text-plus` helper · current comp on the Fusion page |
-| Render | formats/codecs/resolutions · presets (list/load/save/delete/import/export) · queue (add with preset/format/mode/settings, list, delete) · start/stop · **wait** · quick export · burn-in presets |
+| Fusion | comps (list/add/import/rename/load/export/delete) · tools (list/add/get/rename/bypass/delete) · **input discovery** (every parameter of any tool or template with control type, range, default, value) · set inputs · **expressions** · connect · **keyframes** · `text-plus` helper · current comp on the Fusion page |
+| Render | formats/codecs/resolutions · presets (list/load/save/delete/import/export) · queue (add with preset/format/mode/settings, list, delete) · start/stop · **wait** · **progress as server-sent events** · quick export · burn-in presets |
+| Recipes | `POST /recipes/run` - a whole pipeline as ordered steps with `{{ steps.name.path }}` templating, dry-run, stop-on-error · `GET /recipes/operations` · `dollygrip run recipe.json` |
 | Tools | `tools/timecode` (frames ⇄ timecode, drop-frame aware) |
 | Escape hatch | `POST /exec` (requires `--allow-exec`) - namespace: `resolve, fusion, project_manager, project, media_pool, media_storage, timeline, gallery` |
 

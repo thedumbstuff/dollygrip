@@ -5,7 +5,7 @@ MCP tools) - from "assemble and render a cut" to full post pipelines: motion
 graphics, grading, VFX compositing, sound. Blockbuster-grade automation, one
 endpoint at a time.
 
-## Where we are (v0.3)
+## Where we are (v0.4)
 
 Every object and method in Blackmagic's scripting README for Resolve 21 has a
 typed endpoint (287 operations), plus the undocumented Fusion comp/tool API
@@ -27,23 +27,23 @@ render + wait, OTIO/EDL/FCPXML export, project export).
 | Render: formats/codecs/resolutions, presets, queue, start/stop/wait, quick export, burn-in presets | done |
 | System: layouts, preference presets, keyframe mode, Media Storage, quit | done |
 | Studio AI: transcription, audio classification, auto subtitles, voice isolation, speech generation, deblur, IntelliSearch, slate, scene cuts, Dolby Vision | done (endpoints; needs the Extras installed to succeed) |
-| `dollygrip mcp` - every endpoint as an MCP tool (stdio) | done |
+| `dollygrip mcp` - every endpoint as an MCP tool (stdio), profiles, resources | done |
+| Composite edits: relocate (move/trim, linked A/V), split, ripple insert | done |
+| Recipes: `POST /recipes/run`, `dollygrip run` (templating, dry-run) | done |
+| Render progress as server-sent events | done |
+| Fusion parameter discovery, expressions, bypass | done |
 | Timecode helpers | done |
 
 ## Next
 
-- **More composite edit operations**: `relocate` (move/trim) and `split` exist;
-  next are retime, ripple insert at playhead, and moving linked A/V together.
-- **Recipes**: one POST that runs a whole pipeline (import -> assemble ->
-  title -> grade -> render) with a dry-run plan; a `dollygrip run recipe.yaml`
-  CLI.
-- **Progress streaming**: server-sent events for render progress and long AI
-  analyses (today: `POST /render/jobs/{id}/wait`).
-- **Fusion depth**: macro/template parameter discovery (`GetInputList` with
-  control metadata), comp import from `.setting` files with parameter
-  overrides, expression setting.
-- **MCP ergonomics**: profiles exist (`--profile editor|colorist|motion|delivery|core`);
-  next: MCP resources for the OpenAPI doc and gotchas so agents can self-serve.
+- **Retime**: the API exposes RetimeProcess but no speed setter; a composite
+  retime via a Fusion TimeSpeed tool in a Fusion clip is the candidate.
+- **Progress for long AI analyses** (transcription, IntelliSearch) - Resolve
+  gives no status callbacks; a heuristic watcher may be all that is possible.
+- **Fusion macros**: import `.setting` templates with parameter overrides in
+  one call (today: import comp, then `list_tool_inputs` + `set_tool_inputs`).
+- **Recipe library**: shareable recipe files for common deliverables
+  (vertical reel, podcast clip, dailies with burn-ins).
 - **v2 contract pass**: consistent `{ok, data}` envelopes once v1 usage
   settles (v1 stays frozen).
 
