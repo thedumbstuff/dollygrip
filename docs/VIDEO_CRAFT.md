@@ -92,20 +92,20 @@ then MEASURE them (`ffmpeg -i bed.wav -af volumedetect -f null -`: bed mean arou
 
 ## 4. QA before you say "done"
 
-1. `list_items`: every card/shot starts where planned, no gaps, no item pushed
+1. Before heavy Fusion edits: `disable_background_tasks`, and give your HTTP
+   client a timeout - a frozen Resolve must not freeze you.
+2. `list_items`: every card/shot starts where planned, no gaps, no item pushed
    or trimmed (`relocate`/`ripple_insert` responses say `placed_as_requested`).
    For animation, read a value back mid-way (`set_tool_keyframes` returns
    `values_at_keys`; `exec` can sample `GetInput(name, frame)`) - a keyframe
    that did not take renders as a static frame.
-0. Before heavy Fusion edits: `disable_background_tasks`, and give your HTTP
-   client a timeout - a frozen Resolve must not freeze you.
-2. Render with `add_job` + `wait_for_job` (or stream `job_events`), then probe
+3. Render with `add_job` + `wait_for_job` (or stream `job_events`), then probe
    the file: duration matches the timeline, resolution and fps match the spec.
-3. Extract frames at the start, middle and end (`ffmpeg -ss T -frames:v 1`)
+4. Extract frames at the start, middle and end (`ffmpeg -ss T -frames:v 1`)
    and LOOK at them: glyph boxes, text over the safe margin, wrong colours,
    an element missing its entrance.
-4. Measure the mix (`volumedetect` on the render, and on a window between voice lines to hear the bed alone); then listen once: voice over bed, no clipping, music fades out.
-5. Save the project (`save_project`) and report the file path and the project
+5. Measure the mix (`volumedetect` on the render, and on a window between voice lines to hear the bed alone); then listen once: voice over bed, no clipping, music fades out.
+6. Save the project (`save_project`) and report the file path and the project
    name so a human can open it in Resolve and adjust.
 
 ## 5. Things Resolve's API does not expose (say so, do not fake them)
