@@ -144,7 +144,11 @@ def resource_catalog(app: FastAPI) -> List[Dict[str, Any]]:
         },
     ]
     repo = Path(__file__).resolve().parents[2]
-    for rel, uri, name in (("docs/GOTCHAS.md", "dollygrip://gotchas", "Resolve scripting API gotchas"), ("README.md", "dollygrip://readme", "DollyGrip README")):
+    for rel, uri, name in (
+        ("docs/VIDEO_CRAFT.md", "dollygrip://craft", "Video craft guide - read before building any video (structure, typography, motion, music, QA)"),
+        ("docs/GOTCHAS.md", "dollygrip://gotchas", "Resolve scripting API gotchas"),
+        ("README.md", "dollygrip://readme", "DollyGrip README"),
+    ):
         path = repo / rel
         if path.is_file():
             out.append({"uri": uri, "name": name, "mime_type": "text/markdown", "read": (lambda p=path: p.read_text(encoding="utf-8"))})
@@ -262,8 +266,11 @@ def serve_stdio(app: FastAPI, include_tags=None, exclude_tags=None, token: Optio
             "dollygrip",
             instructions=(
                 "Drive the running DaVinci Resolve Studio. Start with health, current_project, list_timelines, "
-                "list_items. Read dollygrip://gotchas before timeline work; use the `run` tool to execute a whole "
-                "recipe of operations in one call."
+                "list_items. BEFORE building or styling any video, read the resource dollygrip://craft (beat sheet "
+                "first, voice before picture, one display + one body font with glyph coverage, safe margins, palette, "
+                "entrance motion, fades via Merge.Blend keyframes, music bed and loudness via ffmpeg stems, captions, "
+                "QA by extracting frames). Read dollygrip://gotchas before timeline work. Use the `run` tool to "
+                "execute a whole recipe of operations in one call, and stock_b_roll for keyword-driven footage."
             ),
             on_list_tools=_list_tools_v2,
             on_call_tool=_call_tool_v2,

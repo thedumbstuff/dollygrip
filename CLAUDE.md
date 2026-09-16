@@ -60,6 +60,8 @@ src/dollygrip/
 tests/fake_resolve.py  FakeResolve - the in-memory model of the whole scripting object graph
 tests/conftest.py      fixtures (client, fake_resolve, project, timeline, item_ids helper)
 docs/GOTCHAS.md        the hard-won Resolve API traps ledger (append every new one)
+docs/VIDEO_CRAFT.md    the production guide agents read (MCP resource dollygrip://craft) - keep it in
+                       sync when a new capability changes how a video should be made
 docs/ROADMAP.md        what to build next
 ```
 
@@ -111,6 +113,8 @@ docs/ROADMAP.md        what to build next
 ## Docs to keep in sync
 
 - `README.md` is the public face (quickstart, API table, Claude/MCP section, security, sharp edges).
+- `docs/VIDEO_CRAFT.md` - when you build a video here, follow it; when you learn a craft lesson
+  (glyph coverage, placement, fades), add it there, not only to GOTCHAS.
 - `docs/GOTCHAS.md` - append new traps with what was observed and on which version.
 - `docs/ROADMAP.md` - tick off / refine as endpoints land.
 - License is **Apache-2.0** (LICENSE file is the source of truth).

@@ -102,6 +102,10 @@ dollygrip run examples/recipe_reel.json
 
 `dry_run: true` returns the resolved plan without touching Resolve; the `run` MCP tool exposes the same thing to agents, so Claude can plan a whole edit and execute it in one call.
 
+## Making it look good
+
+Tools are not taste. [`docs/VIDEO_CRAFT.md`](docs/VIDEO_CRAFT.md) is the production checklist an agent (or you) should follow: beat sheet first, voice before picture, one display font plus one body font with glyph coverage, safe margins, a palette with real contrast, an entrance motion on every element, card fades via `Merge.Blend` keyframes, a music bed and loudness prepared with ffmpeg, captions, and a QA pass that extracts frames and looks at them. It also lists what Resolve's API cannot do (transitions, clip volume/opacity keyframes, Fairlight) and the workaround for each. The MCP server hands it to Claude as `dollygrip://craft`.
+
 ## Stock footage: keywords in, timeline out
 
 Give it the script's keywords (in order), a voiceover (or a duration) and an aspect, and it fills the timeline with stock b-roll:
@@ -159,7 +163,7 @@ claude mcp add dollygrip -- dollygrip mcp --tags "projects,mediapool,timelines,t
 
 Add `--allow-exec` only if you want Claude to be able to run arbitrary Python inside Resolve via the `exec_code` tool.
 
-The server also publishes MCP **resources** Claude can read to self-serve: `dollygrip://openapi.json`, `dollygrip://operations` (every op with its arguments), and from a checkout `dollygrip://gotchas` and `dollygrip://readme`. The `run` tool takes a whole recipe, so a multi-step edit is one tool call.
+The server also publishes MCP **resources** Claude can read to self-serve: `dollygrip://openapi.json`, `dollygrip://operations` (every op with its arguments), and from a checkout `dollygrip://craft` (the [video craft guide](docs/VIDEO_CRAFT.md) - the server's instructions tell the agent to read it before building any video), `dollygrip://gotchas` and `dollygrip://readme`. The `run` tool takes a whole recipe, so a multi-step edit is one tool call.
 
 ### 2. Claude Desktop (or any MCP client)
 
@@ -189,6 +193,9 @@ Drive Resolve through it with curl - never import DaVinciResolveScript directly.
 Start with GET /api/v1/health, GET /api/v1/projects/current, GET /api/v1/timelines/current/items.
 Frames: source in/out are in SOURCE fps; record_frame is 0-based from the timeline start.
 Timeline items are addressed by the `id` from /timelines/current/items; clips by name or id.
+Before building or styling any video, read docs/VIDEO_CRAFT.md in the DollyGrip repo (beat sheet first,
+voice before picture, fonts with glyph coverage, safe margins, palette, entrance motion, card fades,
+music bed, captions, frame-grab QA) and docs/GOTCHAS.md before timeline work.
 ```
 
 ### What Claude can do through it
