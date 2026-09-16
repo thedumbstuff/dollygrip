@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from . import __version__
 from .bridge import NothingOpen, NotFound, Rejected, ResolveBridge, ResolveUnavailable
-from .routers import color, exec_, fusion, items, mediapool, projects, recipes, render, system, timelines, tools
+from .routers import color, exec_, fusion, items, mediapool, projects, recipes, render, stock, system, timelines, tools
 
 API_PREFIX = "/api/v1"
 
@@ -17,10 +17,11 @@ API_PREFIX = "/api/v1"
 class Settings:
     allow_exec: bool = False
     token: Optional[str] = None
+    media_dir: Optional[str] = None  # where stock downloads land (default ~/DollyGrip/stock)
     open_paths: tuple = field(default=("/api/v1/health", "/docs", "/openapi.json", "/redoc"))
 
 
-def create_app(settings: Optional[Settings] = None, bridge: Optional[ResolveBridge] = None) -> FastAPI:
+def create_app(settings: Optional[Settings] = None, bridge: Optional[ResolveBridge] = None, stock_client=None) -> FastAPI:
     settings = settings or Settings()
     app = FastAPI(
         title="DollyGrip",
@@ -34,6 +35,7 @@ def create_app(settings: Optional[Settings] = None, bridge: Optional[ResolveBrid
     )
     app.state.settings = settings
     app.state.bridge = bridge or ResolveBridge()
+    app.state.stock = stock_client  # StockClient; created lazily from settings when None
 
     # -- optional bearer-token auth (health and docs stay open) -----------
     @app.middleware("http")
@@ -72,6 +74,7 @@ def create_app(settings: Optional[Settings] = None, bridge: Optional[ResolveBrid
         render.router,
         tools.router,
         recipes.router,
+        stock.router,
         exec_.router,
     ):
         app.include_router(r, prefix=API_PREFIX)

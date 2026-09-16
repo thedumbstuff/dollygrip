@@ -22,10 +22,36 @@ def fake_resolve():
     return FakeResolve()
 
 
-def make_client(fake, **settings_kwargs):
+def make_client(fake, stock=None, **settings_kwargs):
     bridge = ResolveBridge(connector=lambda: fake)
-    app = create_app(Settings(**settings_kwargs), bridge=bridge)
+    app = create_app(Settings(**settings_kwargs), bridge=bridge, stock_client=stock)
     return TestClient(app)
+
+
+CANNED_PEXELS = {
+    "videos": [
+        {"id": 101, "width": 1080, "height": 1920, "duration": 12, "url": "https://pexels.com/v/101", "user": {"name": "Ann"},
+         "video_files": [{"id": 1, "file_type": "video/mp4", "width": 1080, "height": 1920, "fps": 24, "link": "https://cdn/101.mp4"}]},
+        {"id": 102, "width": 1080, "height": 1920, "duration": 6, "url": "https://pexels.com/v/102", "user": {"name": "Bo"},
+         "video_files": [{"id": 2, "file_type": "video/mp4", "width": 1080, "height": 1920, "fps": 24, "link": "https://cdn/102.mp4"}]},
+    ]
+}
+
+
+def make_stock(media_dir, calls=None):
+    """A StockClient with canned Pexels answers and downloads that write tiny files."""
+    from dollygrip.stock import StockClient
+
+    calls = calls if calls is not None else []
+
+    def fetch(url, params, headers):
+        calls.append((url, params))
+        return CANNED_PEXELS if "pexels" in url else {"hits": []}
+
+    def download(url, dest):
+        dest.write_bytes(b"\x00" * 8)
+
+    return StockClient(media_dir=media_dir, keys={"pexels": ["k"], "pixabay": [], "coverr": []}, fetch=fetch, download=download)
 
 
 @pytest.fixture

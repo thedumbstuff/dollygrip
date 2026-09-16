@@ -18,6 +18,7 @@ def main(argv=None) -> int:
     serve.add_argument("--host", default="127.0.0.1", help="Bind address (keep it on localhost)")
     serve.add_argument("--port", type=int, default=4747, help="Port (default 4747 - GRIP on a keypad)")
     serve.add_argument("--token", default=None, help="Require 'Authorization: Bearer <token>' on every call")
+    serve.add_argument("--media-dir", default=None, help="Folder for stock footage downloads (default ~/DollyGrip/stock or DOLLYGRIP_MEDIA_DIR)")
     serve.add_argument(
         "--allow-exec",
         action="store_true",
@@ -63,7 +64,7 @@ def _serve(args) -> int:
             "Use --token at the very least.",
             file=sys.stderr,
         )
-    app = create_app(Settings(allow_exec=args.allow_exec, token=args.token))
+    app = create_app(Settings(allow_exec=args.allow_exec, token=args.token, media_dir=args.media_dir))
     print(f"DollyGrip {__version__} - http://{args.host}:{args.port}/docs")
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     return 0
