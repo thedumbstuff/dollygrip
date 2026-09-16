@@ -175,3 +175,12 @@ can; the rest you need to know when you reach for `/exec` or extend the API.
 - **Measure audio stems BEFORE importing** (`ffmpeg -af volumedetect`). A
   synthesized bed came out at -69 dB and was inaudible in the render - Resolve
   will not tell you.
+- **A spline with a single key can evaluate to 0 after that key.** A constant
+  set as one key at frame 0 rendered 1.0 at frame 0 and 0.0 after it on one
+  card (its spline had history from an earlier stray key). For constants use
+  two keys (first and last frame) - or set the static value with SetInput.
+- **`CreateSubtitlesFromAudio` needs the Studio speech model downloaded**
+  (Extras Download Manager); without it the call returns False. Burn captions
+  in via Text+ and write an SRT yourself when you know the lines.
+- **Duplicating a timeline copies the Fusion comps**; edits in the copy do not
+  touch the original - the right way to make aspect-ratio variants.

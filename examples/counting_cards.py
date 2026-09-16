@@ -3,7 +3,8 @@ DollyGrip with no footage at all: every card is a Fusion title composed via
 the API (Background colour + big digit that pops in + word + one gold star
 per number + a dip-to-black fade), inserted back to back on V1, with an
 offline text-to-speech voiceover on A1, a soft music bed on A2 and a pop on
-each card entrance on A3.
+each card entrance on A3, burned-in captions that fade in with the voice, an
+SRT sidecar, and a second 9:16 timeline re-flowed for vertical safe margins.
 
     # 1. voice (Windows, offline):  powershell -File examples/counting_voice.ps1 -OutDir D:/counting/voice
     # 2. stems:                     see make_stems() below (ffmpeg) - or drop your own bed.wav / pop.wav in STEMS_DIR
@@ -18,6 +19,7 @@ import os
 import shutil
 import subprocess
 import time
+import wave
 
 import httpx
 
@@ -28,6 +30,8 @@ OUT_DIR = os.environ.get("COUNTING_OUT_DIR", "D:/counting/out")
 FPS = 30
 CARD = 150  # Resolve's default Fusion title length (5 s at 30 fps) - cards tile perfectly
 FADE = 8  # frames in / out
+VOICE_IN = 12  # frames after the card start where the voice (and caption) begin
+LINES = ["Let's count together, from one to ten!", "One.", "Two.", "Three.", "Four.", "Five.", "Six.", "Seven.", "Eight.", "Nine.", "Ten!", "Great job! You counted all the way to ten."]
 
 WORDS = ["One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"]
 PASTELS = [
@@ -60,6 +64,29 @@ def make_stems(total_seconds: float):
     ], check=True)
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=880:duration=0.18",
                     "-af", "afade=t=out:st=0.02:d=0.16,volume=8dB,aformat=sample_rates=48000:channel_layouts=stereo", f"{STEMS_DIR}/pop.wav"], check=True)
+
+
+def wav_seconds(path):
+    try:
+        with wave.open(path) as w:
+            return w.getnframes() / w.getframerate()
+    except (OSError, wave.Error):
+        return 1.5
+
+
+def write_srt(path, cards):
+    def tc(sec):
+        ms = int(round(sec * 1000))
+        h, rem = divmod(ms, 3600000)
+        m, rem = divmod(rem, 60000)
+        s, ms = divmod(rem, 1000)
+        return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+    with open(path, "w", encoding="utf-8") as f:
+        for i, card in enumerate(cards):
+            start = (i * CARD + VOICE_IN) / FPS
+            dur = wav_seconds(f"{VOICE_DIR}/voice_{card['key']}.wav")
+            f.write(f"{i + 1}\n{tc(start)} --> {tc(start + dur + 0.4)}\n{LINES[i]}\n\n")
 
 
 def stars(n):
@@ -95,14 +122,19 @@ for idx, card in enumerate(cards):
     two_rows = "\n" in card["stars"]
     call("POST", f"{comp}/tools", json={"tool_id": "TextPlus", "name": "Stars", "inputs": {"StyledText": card["stars"], "Font": STAR_FONT, "Size": 0.075 if two_rows else 0.09, "Red1": 1.0, "Green1": 0.78, "Blue1": 0.10, "Center": [0.5, 0.16 if two_rows else 0.18], "UseFrameFormatSettings": 1}})
     call("POST", f"{comp}/tools", json={"tool_id": "Background", "name": "Black", "inputs": {"TopLeftRed": 0, "TopLeftGreen": 0, "TopLeftBlue": 0, "TopLeftAlpha": 1.0, "UseFrameFormatSettings": 1}})
-    # chain: Card <- digit <- word <- stars, then the whole card over black so the fade dips to black
-    for merge, bg, fg in (("M1", "Card", digit), ("M2", "M1", "Words"), ("M3", "M2", "Stars"), ("M4", "Black", "M3")):
+    # caption = the spoken line, body font, white on the saturated intro/outro, navy on pastels
+    white = idx in (0, len(cards) - 1)
+    ink = (1.0, 1.0, 1.0) if white else (0.16, 0.16, 0.25)
+    call("POST", f"{comp}/tools", json={"tool_id": "TextPlus", "name": "Caption", "inputs": {"StyledText": LINES[idx], "Font": TEXT_FONT, "Style": "Bold", "Size": 0.045, "Red1": ink[0], "Green1": ink[1], "Blue1": ink[2], "Center": [0.5, 0.075], "UseFrameFormatSettings": 1}})
+    # chain: Card <- digit <- word <- stars <- caption, then the whole card over black so the fade dips to black
+    for merge, bg, fg in (("M1", "Card", digit), ("M2", "M1", "Words"), ("M3", "M2", "Stars"), ("MC", "M3", "Caption"), ("M4", "Black", "MC")):
         call("POST", f"{comp}/tools", json={"tool_id": "Merge", "name": merge})
         call("POST", f"{comp}/tools/{merge}/connect", json={"input": "Background", "source_tool": bg})
         call("POST", f"{comp}/tools/{merge}/connect", json={"input": "Foreground", "source_tool": fg})
     call("POST", f"{comp}/tools/{media_out}/connect", json={"input": "Input", "source_tool": "M4"})
-    # motion: digit pops in; whole card fades in/out (real splines - the endpoint attaches them)
+    # motion: digit pops in; caption fades in with the voice; whole card fades in/out (real splines - the endpoint attaches them)
     call("POST", f"{comp}/tools/{digit}/keyframes", json={"input": "Size", "keyframes": [{"frame": 0, "value": 0.02}, {"frame": 10, "value": card["size"]}]})
+    call("POST", f"{comp}/tools/MC/keyframes", json={"input": "Blend", "keyframes": [{"frame": 0, "value": 0.0}, {"frame": VOICE_IN, "value": 0.0}, {"frame": VOICE_IN + 8, "value": 1.0}]})
     call("POST", f"{comp}/tools/M4/keyframes", json={"input": "Blend", "keyframes": [{"frame": 0, "value": 0.0}, {"frame": FADE, "value": 1.0}, {"frame": CARD - 1 - FADE, "value": 1.0}, {"frame": CARD - 1, "value": 0.0}]})
     print("card", card["key"], "->", item_id, flush=True)
     time.sleep(0.2)
@@ -123,7 +155,30 @@ for i, label in enumerate(("Voice", "Music", "SFX"), start=1):
     call("PATCH", f"/timelines/current/tracks/audio/{i}", json={"name": label})
 call("POST", "/projects/current/save")
 
-job = call("POST", "/render/jobs", json={"format": "mp4", "codec": "H264", "mode": "single", "settings": {"TargetDir": OUT_DIR, "CustomName": "counting-1-to-10", "SelectAllFrames": True, "FormatWidth": 1920, "FormatHeight": 1080, "FrameRate": 30}, "start": True})
-done = call("POST", f"/render/jobs/{job['job_id']}/wait", params={"timeout": 900})
-print("render:", done["JobStatus"], "->", OUT_DIR)
-print("QA: probe the file, grab frames at a cut (t=4.9s, 5.1s), and measure levels - see docs/VIDEO_CRAFT.md section 4")
+def render(custom_name, width, height):
+    job = call("POST", "/render/jobs", json={"format": "mp4", "codec": "H264", "mode": "single", "settings": {"TargetDir": OUT_DIR, "CustomName": custom_name, "SelectAllFrames": True, "FormatWidth": width, "FormatHeight": height, "FrameRate": 30}, "start": True})
+    done = call("POST", f"/render/jobs/{job['job_id']}/wait", params={"timeout": 900})
+    print("render:", custom_name, done["JobStatus"], "->", OUT_DIR)
+
+
+render("counting-1-to-10-16x9", 1920, 1080)
+write_srt(f"{OUT_DIR}/counting-1-to-10-16x9.srt", cards)
+
+# --- 9:16 version: duplicate, resize (comps follow the frame format), re-flow for vertical safe margins
+call("POST", "/timelines/current/duplicate", json={"name": "counting-9x16"})
+call("POST", "/timelines/current", json={"name": "counting-9x16"})
+call("PATCH", "/timelines/current/settings", json={"settings": {"timelineResolutionWidth": "1080", "timelineResolutionHeight": "1920"}})
+vcards = sorted((i for i in call("GET", "/timelines/current/items", params={"track_type": "video"})["items"] if i["track_index"] == 1), key=lambda i: i["start_rel"])
+for idx, item in enumerate(vcards):
+    comp = f"/fusion/items/{item['id']}/comps/1"
+    big = 0 < idx < len(vcards) - 1
+    two_rows = big and idx > 5
+    call("PATCH", f"{comp}/tools/Template/inputs", json={"inputs": {"Center": [0.5, 0.60 if big else 0.58]}})
+    call("PATCH", f"{comp}/tools/Words/inputs", json={"inputs": {"Center": [0.5, 0.42], "Size": 0.11}})
+    call("PATCH", f"{comp}/tools/Stars/inputs", json={"inputs": {"Center": [0.5, 0.33 if two_rows else 0.35], "Size": 0.085 if two_rows else 0.1}})
+    call("PATCH", f"{comp}/tools/Caption/inputs", json={"inputs": {"Center": [0.5, 0.25], "Size": 0.06}})  # bottom 20% stays free for platform UI
+    time.sleep(0.1)
+call("POST", "/projects/current/save")
+render("counting-1-to-10-9x16", 1080, 1920)
+write_srt(f"{OUT_DIR}/counting-1-to-10-9x16.srt", vcards)
+print("QA: probe both files, grab frames at a cut (t=4.9s, 5.1s) and at the outro, measure levels - see docs/VIDEO_CRAFT.md section 4")

@@ -77,6 +77,20 @@ then MEASURE them (`ffmpeg -i bed.wav -af volumedetect -f null -`: bed mean arou
 **Silence padding for TTS lines**: `ffmpeg -i line.wav -af "adelay=400|400" line_padded.wav`
 (0.4 s lead-in so the visual lands first).
 
+**Captions when the speech model is not installed** (`auto_subtitles` answers
+422 "Studio + speech model required"): you already know every line and when
+its voice starts, so burn them in - one `Caption` Text+ per card merged before
+the final fade Merge, `Blend` keyed 0 until the voice frame then 1 over 8
+frames - and write an `.srt` sidecar from the same timings for the upload.
+Body font, 0.045 size (16:9) / 0.06 (9:16), white on saturated backgrounds,
+dark ink on pastels.
+
+**A 9:16 version from a 16:9 timeline**: `duplicate_timeline`, then
+`patch_timeline_settings` with 1080x1920 - Fusion tools created with
+`UseFrameFormatSettings: 1` follow the new frame, and `Center` is in 0..1 so
+the layout mostly survives. Then re-flow: big element up (~0.60), word ~0.42,
+symbols ~0.34, caption ~0.25, nothing below 0.20. Render 1080x1920.
+
 **Stock explainer, one call**: `stock_b_roll` with `terms` in script order,
 `voiceover_path`, `aspect`, `max_clip_duration: 4`, `fit: fill`; then
 `auto_subtitles`; then `add_job`. See `examples/recipe_stock_explainer.json`.
