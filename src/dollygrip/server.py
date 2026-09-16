@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from . import __version__
-from .bridge import NothingOpen, NotFound, ResolveBridge, ResolveUnavailable
+from .bridge import NothingOpen, NotFound, Rejected, ResolveBridge, ResolveUnavailable
 from .routers import exec_, mediapool, projects, render, system, timelines
 
 API_PREFIX = "/api/v1"
@@ -24,6 +24,9 @@ def create_app(settings: Optional[Settings] = None, bridge: Optional[ResolveBrid
     settings = settings or Settings()
     app = FastAPI(
         title="DollyGrip",
+        # operationIds = endpoint function names: stable, readable, and what
+        # the MCP server uses as tool names (a test enforces uniqueness).
+        generate_unique_id_function=lambda route: route.name,
         version=__version__,
         description="A local REST gateway for the DaVinci Resolve scripting API. "
         "Interactive docs below; the machine running this gateway must also be "
@@ -53,6 +56,10 @@ def create_app(settings: Optional[Settings] = None, bridge: Optional[ResolveBrid
     @app.exception_handler(NotFound)
     async def _not_found(request: Request, exc: NotFound):
         return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    @app.exception_handler(Rejected)
+    async def _rejected(request: Request, exc: Rejected):
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
 
     for r in (system.router, projects.router, mediapool.router, timelines.router, render.router, exec_.router):
         app.include_router(r, prefix=API_PREFIX)

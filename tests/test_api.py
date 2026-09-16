@@ -73,7 +73,7 @@ def test_create_timeline_with_custom_settings(fake_resolve):
     assert tl.settings["useCustomSettings"] == "1"
     assert tl.settings["timelineResolutionHeight"] == "1920"
     assert tl.settings["timelineFrameRate"] == "30"
-    assert tl.tracks["video"] == 3
+    assert tl.GetTrackCount("video") == 3
 
 
 def test_duplicate_timeline_404(client):
