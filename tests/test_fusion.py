@@ -66,3 +66,21 @@ def test_current_comp(client, fake_resolve):
     assert r.status_code == 200 and [t["id"] for t in r.json()["tools"]] == ["MediaIn", "MediaOut", "TextPlus"]
     assert client.patch(f"{F}/current-comp/tools/Template/inputs", json={"inputs": {"StyledText": "Live"}}).json()["results"] == {"StyledText": True}
     assert fake_resolve._fusion.current_comp.tools["Template"].inputs["StyledText"] == "Live"
+
+
+def test_input_discovery_expressions_and_bypass(client, timeline):
+    iid = _title(client)
+    r = client.get(f"{F}/items/{iid}/comps/1/tools/Template/inputs")
+    assert r.status_code == 200, r.text
+    rows = {i["id"]: i for i in r.json()["inputs"]}
+    assert rows["StyledText"]["control"] == "TextEditControl" and rows["StyledText"]["value"] == "Title" and rows["Size"]["max"] == 1.0
+    assert all(i["page"] == "Text" for i in client.get(f"{F}/items/{iid}/comps/1/tools/Template/inputs", params={"page": "text"}).json()["inputs"])
+    r = client.put(f"{F}/items/{iid}/comps/1/tools/Template/expression", json={"input": "Size", "expression": "time/30"})
+    assert r.status_code == 200 and r.json()["expression"] == "time/30"
+    rows = {i["id"]: i for i in client.get(f"{F}/items/{iid}/comps/1/tools/Template/inputs").json()["inputs"]}
+    assert rows["Size"]["expression"] == "time/30"
+    assert client.put(f"{F}/items/{iid}/comps/1/tools/Template/expression", json={"input": "Size", "expression": None}).json()["expression"] is None
+    r = client.patch(f"{F}/items/{iid}/comps/1/tools/Template", json={"pass_through": True, "name": "Title1"})
+    assert r.json()["tool"] == {"name": "Title1", "id": "TextPlus", "pass_through": True, "selected": False}
+    assert client.get(f"{F}/items/{iid}/comps/1/tools/Title1").status_code == 200
+    assert client.get(f"{F}/items/{iid}/comps/1/tools/Template").status_code == 404

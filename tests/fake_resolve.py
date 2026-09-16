@@ -576,7 +576,20 @@ class FakeInput:
         return self.tool.keyframes.get(self.name, {}).get(frame, self.tool.inputs.get(self.name))
 
     def GetAttrs(self):
-        return {"INPS_Name": self.name, "INPS_ID": self.name, "INPB_Connected": False}
+        page = "Text" if self.name in ("StyledText", "Font", "Size") else "Controls"
+        return {"INPS_Name": self.name, "INPS_ID": self.name, "INPB_Connected": self.name in self.tool.connections,
+                "INPID_InputControl": "TextEditControl" if self.name == "StyledText" else "SliderControl",
+                "INPS_DataType": "Text" if self.name in ("StyledText", "Font") else "Number",
+                "INPN_MinScale": 0.0, "INPN_MaxScale": 1.0, "INPN_Default": 0.08, "INPS_Page": page}
+
+    def SetExpression(self, expr):
+        if expr is None:
+            self.tool.expressions.pop(self.name, None)
+        else:
+            self.tool.expressions[self.name] = expr
+
+    def GetExpression(self):
+        return self.tool.expressions.get(self.name)
 
 
 class FakeTool:
@@ -586,15 +599,19 @@ class FakeTool:
         self.inputs = {"StyledText": "Title", "Size": 0.08} if reg_id == "TextPlus" else {}
         self.keyframes = {}
         self.connections = {}
+        self.expressions = {}
+        self.pass_through = False
         self.deleted = False
 
     def GetAttrs(self):
-        return {"TOOLS_Name": self.Name, "TOOLS_RegID": self.reg_id, "TOOLB_PassThrough": False, "TOOLB_Selected": False}
+        return {"TOOLS_Name": self.Name, "TOOLS_RegID": self.reg_id, "TOOLB_PassThrough": self.pass_through, "TOOLB_Selected": False}
 
     def SetAttrs(self, attrs):
         if "TOOLS_Name" in attrs:
             self.comp.tools[attrs["TOOLS_Name"]] = self.comp.tools.pop(self.Name)
             self.Name = attrs["TOOLS_Name"]
+        if "TOOLB_PassThrough" in attrs:
+            self.pass_through = bool(attrs["TOOLB_PassThrough"])
         return True
 
     def GetInput(self, name, time=None):
@@ -618,7 +635,7 @@ class FakeTool:
         self.comp.tools.pop(self.Name, None)
 
     def __getattr__(self, name):
-        if name.startswith("_") or name in ("comp", "reg_id", "Name", "ID", "inputs", "keyframes", "connections", "deleted"):
+        if name.startswith("_") or name in ("comp", "reg_id", "Name", "ID", "inputs", "keyframes", "connections", "expressions", "pass_through", "deleted"):
             raise AttributeError(name)
         return FakeInput(self, name)
 

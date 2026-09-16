@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, Query
 
 from ..bridge import NotFound, Rejected, ResolveBridge, require
 from ..deps import resolve_session
-from ..schemas import AddComp, AddTool, CompExport, ConnectInput, RenameComp, TextPlus, ToolInputs, ToolKeyframes
+from ..schemas import AddComp, AddTool, CompExport, ConnectInput, PatchTool, RenameComp, TextPlus, ToolExpression, ToolInputs, ToolKeyframes
 from ..serialize import jsonable, safe, tool_summary
 
 router = APIRouter(prefix="/fusion", tags=["fusion"])
@@ -157,6 +157,81 @@ def add_tool(item_id: str, comp: str, body: AddTool, bridge: ResolveBridge = Dep
 @router.get("/items/{item_id}/comps/{comp}/tools/{tool}")
 def get_tool(item_id: str, comp: str, tool: str, bridge: ResolveBridge = Depends(resolve_session)):
     return _tool_detail(_tool(_comp(bridge, item_id, comp), tool))
+
+
+_INPUT_ATTRS = {
+    "INPS_Name": "name",
+    "INPS_ID": "id",
+    "INPID_InputControl": "control",
+    "INPS_DataType": "data_type",
+    "INPN_MinScale": "min",
+    "INPN_MaxScale": "max",
+    "INPN_MinAllowed": "min_allowed",
+    "INPN_MaxAllowed": "max_allowed",
+    "INPN_Default": "default",
+    "INPS_Default": "default",
+    "INPB_Connected": "connected",
+    "INPS_Page": "page",
+    "INPB_Visible": "visible",
+}
+
+
+@router.get("/items/{item_id}/comps/{comp}/tools/{tool}/inputs")
+def list_tool_inputs(item_id: str, comp: str, tool: str, page: Optional[str] = Query(default=None, description="Only inputs on this Inspector page, e.g. 'Text', 'Layout', 'Controls'"), bridge: ResolveBridge = Depends(resolve_session)):
+    """Parameter discovery for any tool - including macros/templates from the
+    Effects Library: every input with its control type, range, default,
+    current value and expression. This is how an agent learns what a
+    template exposes before setting it."""
+    t = _tool(_comp(bridge, item_id, comp), tool)
+    out = []
+    try:
+        inputs = t.GetInputList() or {}
+    except Exception as e:
+        raise Rejected(f"GetInputList failed: {e}") from e
+    for inp in inputs.values():
+        attrs = safe(inp.GetAttrs, default={}) or {}
+        row = {alias: jsonable(attrs[key]) for key, alias in _INPUT_ATTRS.items() if key in attrs}
+        key = row.get("id") or row.get("name")
+        if not key:
+            continue
+        if page and str(row.get("page", "")).lower() != page.lower():
+            continue
+        row["value"] = jsonable(safe(t.GetInput, key))
+        expr = safe(inp.GetExpression)
+        if expr:
+            row["expression"] = expr
+        out.append(row)
+    return {"tool": tool_summary(t), "inputs": out}
+
+
+@router.put("/items/{item_id}/comps/{comp}/tools/{tool}/expression")
+def set_tool_expression(item_id: str, comp: str, tool: str, body: ToolExpression, bridge: ResolveBridge = Depends(resolve_session)):
+    """Drive an input by a Fusion expression (e.g. `time/30`, `Transform1.Angle*2`); null removes it."""
+    t = _tool(_comp(bridge, item_id, comp), tool)
+    try:
+        inp = getattr(t, body.input)
+        inp.SetExpression(body.expression)
+        current = safe(inp.GetExpression)
+    except Exception as e:
+        raise Rejected(f"SetExpression on {body.input!r} failed: {e}") from e
+    return {"ok": True, "input": body.input, "expression": current}
+
+
+@router.patch("/items/{item_id}/comps/{comp}/tools/{tool}")
+def patch_tool(item_id: str, comp: str, tool: str, body: PatchTool, bridge: ResolveBridge = Depends(resolve_session)):
+    """Rename a tool or toggle bypass (pass-through)."""
+    t = _tool(_comp(bridge, item_id, comp), tool)
+    attrs = {}
+    if body.name is not None:
+        attrs["TOOLS_Name"] = body.name
+    if body.pass_through is not None:
+        attrs["TOOLB_PassThrough"] = body.pass_through
+    if attrs:
+        try:
+            t.SetAttrs(attrs)
+        except Exception as e:
+            raise Rejected(f"SetAttrs failed: {e}") from e
+    return {"ok": True, "tool": tool_summary(t)}
 
 
 @router.delete("/items/{item_id}/comps/{comp}/tools/{tool}")

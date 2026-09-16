@@ -598,6 +598,16 @@ class ToolKeyframes(BaseModel):
     keyframes: List[Keyframe]
 
 
+class ToolExpression(BaseModel):
+    input: str
+    expression: Optional[str] = Field(default=None, description="Fusion expression, e.g. 'time/24' or 'Merge1.Blend'; null clears it")
+
+
+class PatchTool(BaseModel):
+    name: Optional[str] = None
+    pass_through: Optional[bool] = Field(default=None, description="Bypass the tool (TOOLB_PassThrough)")
+
+
 class TextPlus(BaseModel):
     text: str
     tool: Optional[str] = Field(default=None, description="Text+ tool name; default = the first TextPlus tool in the comp")
