@@ -32,6 +32,11 @@ def main(argv=None) -> int:
     mcp.add_argument("--tags", default=None, help="Comma-separated OpenAPI tags to expose (overrides --profile), e.g. 'timelines,timeline items,render'")
     mcp.add_argument("--exclude-tags", default=None, help="Comma-separated tags to hide")
 
+    runp = sub.add_parser("run", help="Run a recipe file (JSON, or YAML if pyyaml is installed) against Resolve without starting a server")
+    runp.add_argument("recipe", help="Path to the recipe file: {steps: [{name, op, args}], stop_on_error}")
+    runp.add_argument("--dry-run", action="store_true", help="Resolve templates and validate ops only")
+    runp.add_argument("--allow-exec", action="store_true", help="Allow exec_code steps")
+
     args = parser.parse_args(argv)
 
     if args.command == "serve":
@@ -40,6 +45,8 @@ def main(argv=None) -> int:
         return _doctor()
     if args.command == "mcp":
         return _mcp(args)
+    if args.command == "run":
+        return _run(args)
     parser.print_help()
     return 2
 
@@ -76,6 +83,37 @@ def _mcp(args) -> int:
     app = create_app(Settings(allow_exec=args.allow_exec))
     serve_stdio(app, include_tags=include, exclude_tags=split(args.exclude_tags))
     return 0
+
+
+def _run(args) -> int:
+    import json
+
+    from .recipes import run_recipe_sync
+    from .server import Settings, create_app
+
+    with open(args.recipe, encoding="utf-8") as f:
+        text = f.read()
+    try:
+        recipe = json.loads(text)
+    except ValueError:
+        try:
+            import yaml  # type: ignore
+
+            recipe = yaml.safe_load(text)
+        except ImportError:
+            print("Recipe is not JSON and pyyaml is not installed (pip install pyyaml for YAML recipes)", file=sys.stderr)
+            return 2
+    steps = recipe["steps"] if isinstance(recipe, dict) else recipe
+    stop = recipe.get("stop_on_error", True) if isinstance(recipe, dict) else True
+    app = create_app(Settings(allow_exec=args.allow_exec))
+    report = run_recipe_sync(app, steps, dry_run=args.dry_run, stop_on_error=stop)
+    for step in report["steps"]:
+        line = f"[{step['status']:>7}] {step['name']} ({step.get('op')})"
+        if step.get("error"):
+            line += f" - {step['error']}"
+        print(line)
+    print(json.dumps(report, indent=2, default=str)) if args.dry_run else None
+    return 0 if report["ok"] else 1
 
 
 def _doctor() -> int:

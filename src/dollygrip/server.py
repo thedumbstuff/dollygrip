@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from . import __version__
 from .bridge import NothingOpen, NotFound, Rejected, ResolveBridge, ResolveUnavailable
-from .routers import color, exec_, fusion, items, mediapool, projects, render, system, timelines, tools
+from .routers import color, exec_, fusion, items, mediapool, projects, recipes, render, system, timelines, tools
 
 API_PREFIX = "/api/v1"
 
@@ -71,6 +71,7 @@ def create_app(settings: Optional[Settings] = None, bridge: Optional[ResolveBrid
         fusion.router,
         render.router,
         tools.router,
+        recipes.router,
         exec_.router,
     ):
         app.include_router(r, prefix=API_PREFIX)
