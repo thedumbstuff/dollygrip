@@ -31,7 +31,7 @@ the result looks designed rather than generated.
 | **Safe margins** | Keep text inside 0.08..0.92 of the frame on both axes; on 9:16 keep the bottom 0.2 free (platform UI) and the top 0.12 free | `Center` in 0..1 |
 | **Palette** | One background family + one ink + one accent. Kids: pastels (sat 0.4-0.6, light 0.8-0.9) with dark navy ink and a gold accent. Corporate: deep background, white ink, one brand accent | Background tool `TopLeftRed/Green/Blue` |
 | **Contrast** | Ink vs background luminance ratio >= 4.5:1 for body text; white on pastel is fine only for very large display text | choose ink per background |
-| **Motion** | Every element enters (pop 8-12 frames or slide) and holds; nothing jumps in on frame 0 of a cut. One motion idea per card | `set_tool_keyframes` on `Size`, `Center`, `Blend` |
+| **Motion** | Every element enters (pop 8-12 frames or slide) and holds; nothing jumps in on frame 0 of a cut. One motion idea per card. Give static elements a slow breathing bob so nothing looks like a slide | `set_tool_keyframes` on `Size`, `AngleZ`, `Blend`; `set_tool_expression` on `Center` |
 | **Transitions** | Cards: fade in 8 frames, fade out 8 frames via the last Merge's `Blend` (0 -> 1 -> 0). Footage: a cut is fine at 3-5 s pace; avoid dissolves between unrelated stock shots | keyframes on `Merge.Blend` |
 | **B-roll rhythm** | 3-5 s per shot, follow the script order, never repeat a source before every source has appeared, trim the last shot to the voice end | `stock_plan` does all of this |
 | **Framing** | Stock into a vertical frame: `fit: fill` (cover) - letterboxing reads as a mistake | `stock_assemble` fit |
@@ -90,6 +90,19 @@ dark ink on pastels.
 `UseFrameFormatSettings: 1` follow the new frame, and `Center` is in 0..1 so
 the layout mostly survives. Then re-flow: big element up (~0.60), word ~0.42,
 symbols ~0.34, caption ~0.25, nothing below 0.20. Render 1080x1920.
+
+**A music video timed to a song** (lyric videos, kids' songs, anything
+where visuals must land on sung words): get word timestamps first
+(faster-whisper with `word_timestamps=True` and the lyrics as
+`initial_prompt`), then build the WHOLE show as ONE Fusion comp: append a
+black carrier clip the length of the song on V1 and the song on A1, add a
+comp to the carrier (`add_comp`), and inside it merge every element over a
+chain - visibility = `Merge.Blend` keys `(t_in, 0) (t_in+f, 1) (t_out-f, 1)
+(t_out, 0)`, pops = `Size` keys, wobble = `AngleZ` keys, breathing =
+`Center` expression `Point(x, y + 0.012*sin(time/5))`. Walk the transcript in
+lyric order with a cursor and reset it at section boundaries. Preview with
+`export_current_frame` at cue times before rendering (about a second per
+still). Worked example: `examples/count_with_me/`.
 
 **Stock explainer, one call**: `stock_b_roll` with `terms` in script order,
 `voiceover_path`, `aspect`, `max_clip_duration: 4`, `fit: fill`; then
