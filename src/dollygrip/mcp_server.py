@@ -269,7 +269,7 @@ def serve_stdio(app: FastAPI, include_tags=None, exclude_tags=None, token: Optio
                 "list_items. BEFORE building or styling any video, read the resource dollygrip://craft (beat sheet "
                 "first, voice before picture, one display + one body font with glyph coverage, safe margins, palette, "
                 "entrance motion, fades via Merge.Blend keyframes, music bed and loudness via ffmpeg stems, captions, "
-                "QA by extracting frames). Read dollygrip://gotchas before timeline work. Use the `run` tool to "
+                "QA by extracting frames, and ALWAYS deliver an SEO title, description with chapters, and tags alongside every video). Read dollygrip://gotchas before timeline work. Use the `run` tool to "
                 "execute a whole recipe of operations in one call, and stock_b_roll for keyword-driven footage."
             ),
             on_list_tools=_list_tools_v2,

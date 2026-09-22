@@ -195,7 +195,8 @@ Frames: source in/out are in SOURCE fps; record_frame is 0-based from the timeli
 Timeline items are addressed by the `id` from /timelines/current/items; clips by name or id.
 Before building or styling any video, read docs/VIDEO_CRAFT.md in the DollyGrip repo (beat sheet first,
 voice before picture, fonts with glyph coverage, safe margins, palette, entrance motion, card fades,
-music bed, captions, frame-grab QA) and docs/GOTCHAS.md before timeline work.
+music bed, captions, frame-grab QA, and always hand over an SEO title, description with chapters and tags
+with every video) and docs/GOTCHAS.md before timeline work.
 ```
 
 ### What Claude can do through it

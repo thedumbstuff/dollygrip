@@ -132,7 +132,14 @@ still). Worked example: `examples/count_with_me/`.
    and LOOK at them: glyph boxes, text over the safe margin, wrong colours,
    an element missing its entrance.
 5. Measure the mix (`volumedetect` on the render, and on a window between voice lines to hear the bed alone); then listen once: voice over bed, no clipping, music fades out.
-6. Save the project (`save_project`) and report the file path and the project
+6. **Deliver upload metadata with every video** - always, unprompted: an
+   SEO title (keywords first, under 100 characters, the audience and the
+   promise in it), a description (hook line, what the viewer gets, a
+   chapters list with `m:ss` timestamps from your own cue times, a call to
+   action, 5-8 hashtags), and 10-16 tags. Write it next to the render as
+   `<name>.metadata.md` and paste it in the reply. For 9:16 variants give a
+   short Shorts/Reels title with `#shorts`.
+7. Save the project (`save_project`) and report the file path and the project
    name so a human can open it in Resolve and adjust.
 
 ## 5. Things Resolve's API does not expose (say so, do not fake them)
