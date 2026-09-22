@@ -42,6 +42,7 @@ def test_tools_inputs_connect_keyframes(client, timeline):
     r = client.post(f"{F}/items/{iid}/comps/1/tools/Template/keyframes", json={"input": "Size", "keyframes": [{"frame": 0, "value": 0.05}, {"frame": 24, "value": 0.12}]})
     assert r.json()["all_ok"] and r.json()["mode"] == "spline" and comp.tools["Template"].keyframes["Size"] == {0: 0.05, 24: 0.12}
     assert "Size" in comp.tools["Template"].splines and r.json()["values_at_keys"] == {"0": 0.05, "24": 0.12}
+    assert comp.tools["Template"].inputs["Size"] == 0.05 and comp.attrs["COMPN_CurrentTime"] == 0.0  # static value + comp time parked on the first key before attaching
     r = client.post(f"{F}/items/{iid}/comps/1/tools/Template/keyframes", json={"input": "Size", "keyframes": [{"frame": 48, "value": 0.3}], "replace": False})
     assert comp.tools["Template"].keyframes["Size"] == {0: 0.05, 24: 0.12, 48: 0.3}
     r = client.post(f"{F}/items/{iid}/comps/1/tools/Template/keyframes", json={"input": "Center", "keyframes": [{"frame": 0, "value": [0.5, 0.2]}]})

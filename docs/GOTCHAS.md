@@ -184,3 +184,13 @@ can; the rest you need to know when you reach for `/exec` or extend the API.
   in via Text+ and write an SRT yourself when you know the lines.
 - **Duplicating a timeline copies the Fusion comps**; edits in the copy do not
   touch the original - the right way to make aspect-ratio variants.
+- **`BezierSpline:SetKeyFrames(keys, True)` does NOT remove existing keys.**
+  The stray key that attaching a spline leaves at the comp's current time
+  survived "replace" and, on a 160-second comp with 150 Blend-gated layers,
+  held every layer at 1.0 from frame 0 - everything rendered at once. The
+  keyframes endpoint now sets the static value to the first key and parks
+  `COMPN_CurrentTime` on the first key's frame before attaching, so the stray
+  key coincides with a real one. Verify gating by reading `GetInput(name, t)`
+  at a frame OUTSIDE your window.
+- **A Merge with no Background outputs nothing** - and every tool downstream
+  goes black. The first layer of a chain must be the background itself.

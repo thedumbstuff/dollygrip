@@ -270,14 +270,22 @@ def animate_input(comp, tool, input_name: str, keyframes: dict, replace: bool = 
     writes a STATIC value unless a spline is attached, and attaching one adds a
     stray key at the comp's current time - so: attach a BezierSpline if the
     input is not animated, then set all keys wholesale with SetKeyFrames."""
+    keys = {float(frame): (value if isinstance(value, dict) else {1: value}) for frame, value in keyframes.items()}
     inp = getattr(tool, input_name)
     out = safe(inp.GetConnectedOutput)
     if out is None:
+        # Attaching a spline drops a key at the comp's CURRENT time holding the
+        # OLD static value, and SetKeyFrames(replace=True) does not remove it.
+        # So: make the static value equal the first key, and park the comp time
+        # on the first key's frame - the stray key then coincides with ours.
+        first_frame = min(keys)
+        first_value = keys[first_frame]
+        safe(tool.SetInput, input_name, first_value[1] if set(first_value) == {1} else first_value)
+        safe(comp.SetAttrs, {"COMPN_CurrentTime": first_frame})
         setattr(tool, input_name, comp.BezierSpline())
         inp = getattr(tool, input_name)
         out = safe(inp.GetConnectedOutput)
     spline = safe(out.GetTool) if out else None
-    keys = {float(frame): (value if isinstance(value, dict) else {1: value}) for frame, value in keyframes.items()}
     if spline is not None and hasattr(spline, "SetKeyFrames"):
         spline.SetKeyFrames(keys, replace)
         return {"mode": "spline", "keys": len(keys)}
