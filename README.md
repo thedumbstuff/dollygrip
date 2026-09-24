@@ -259,6 +259,10 @@ This gateway is **remote control for an application with filesystem access** - t
 - `POST /exec` is **disabled by default**; `--allow-exec` turns it on. It is arbitrary code execution on the host, by design - never combine it with a non-localhost bind.
 - `dollygrip mcp` runs in-process over stdio: nothing listens on the network at all.
 
+## Where the project stands
+
+[`docs/WATCHTOWER.md`](docs/WATCHTOWER.md) is the status board: every capability area with its operation count and live-verification status, the pending items in priority order, the decisions made and why, and the development required next. [`docs/ROADMAP.md`](docs/ROADMAP.md) is the longer-horizon climb.
+
 ## Development
 
 ```bash

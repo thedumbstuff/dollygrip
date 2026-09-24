@@ -60,6 +60,8 @@ src/dollygrip/
 tests/fake_resolve.py  FakeResolve - the in-memory model of the whole scripting object graph
 tests/conftest.py      fixtures (client, fake_resolve, project, timeline, item_ids helper)
 docs/GOTCHAS.md        the hard-won Resolve API traps ledger (append every new one)
+docs/WATCHTOWER.md     the status board: capabilities, verification, pending, decisions, dev required -
+                       update it in the same commit as the change it describes
 docs/VIDEO_CRAFT.md    the production guide agents read (MCP resource dollygrip://craft) - keep it in
                        sync when a new capability changes how a video should be made
 docs/ROADMAP.md        what to build next
@@ -117,6 +119,7 @@ docs/ROADMAP.md        what to build next
   (glyph coverage, placement, fades), add it there, not only to GOTCHAS.
 - `docs/GOTCHAS.md` - append new traps with what was observed and on which version.
 - `docs/ROADMAP.md` - tick off / refine as endpoints land.
+- `docs/WATCHTOWER.md` - the status board; refresh its header line and the affected section with every change.
 - License is **Apache-2.0** (LICENSE file is the source of truth).
 - Not affiliated with Blackmagic Design; nothing from Resolve is bundled - the scripting
   module loads from the user's own install at runtime. Keep it that way.

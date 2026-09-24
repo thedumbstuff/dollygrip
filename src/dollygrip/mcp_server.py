@@ -145,6 +145,7 @@ def resource_catalog(app: FastAPI) -> List[Dict[str, Any]]:
     ]
     repo = Path(__file__).resolve().parents[2]
     for rel, uri, name in (
+        ("docs/WATCHTOWER.md", "dollygrip://watchtower", "Project watchtower - what works, what is verified, pending items, decisions, development required"),
         ("docs/VIDEO_CRAFT.md", "dollygrip://craft", "Video craft guide - read before building any video (structure, typography, motion, music, QA)"),
         ("docs/GOTCHAS.md", "dollygrip://gotchas", "Resolve scripting API gotchas"),
         ("README.md", "dollygrip://readme", "DollyGrip README"),

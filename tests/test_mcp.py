@@ -123,3 +123,4 @@ def test_resource_catalog(app):
     # from a checkout the docs are exposed too
     assert cat["dollygrip://gotchas"]["read"]().startswith("# Resolve scripting API gotchas")
     assert cat["dollygrip://craft"]["read"]().startswith("# Video craft guide")
+    assert cat["dollygrip://watchtower"]["read"]().startswith("# DollyGrip Watchtower")
