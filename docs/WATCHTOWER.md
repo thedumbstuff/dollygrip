@@ -85,6 +85,11 @@ Dropped by decision: cloud projects (see §4).
 | 2026-09-22 | Keyframe endpoint **parks comp time and static value on the first key** before attaching a spline | `SetKeyFrames(replace=True)` does not remove the stray key Fusion adds on attach |
 | 2026-09-22 | Every video delivery includes **SEO title, description with chapters, and tags** (`<name>.metadata.md`) | user rule: videos are for publishing |
 | 2026-09-16 | Commit in logical chunks, no attribution footers, **never push** unless asked | user's workflow |
+| 2026-09-24 | Fusion **pastes run in Fusion's Lua** (`comp.Execute` + pcall + `SetData` hand-back), never `comp.Paste(table)` from Python | Python-side Paste returns True and pastes nothing: nested settings tables do not survive the bridge |
+| 2026-09-24 | A comp is **opened on the Fusion page automatically** before paste / node layout (`_loaded`: playhead onto the item, load, open page, settle, restore page + playhead) | `comp.CurrentFrame` is None until the comp has been shown once; the Fusion page shows the clip under the playhead |
+| 2026-09-24 | `_loaded` **disables background tasks** first | Resolve froze hard (UI dead, CPU flat, killed after 3 min) on a paste into a fresh comp while particle comps rendered in the background - second hard freeze on Fusion writes |
+| 2026-09-24 | Effects Library templates are read from **folders and `.drfx` bundles**, extracted to `%TEMP%/dollygrip` for `bmd.readfile` | built-ins ship zipped in `Templates.drfx`; Fusion cannot read zip members |
+| 2026-09-24 | Modifier list is the **verified constructor set** (BezierSpline, Path, XYPath, Shake, Calculation, Offset, Expression, Probe, KeyStretcher) | `comp.Perturb()` / `comp.Follower()` do not exist on Resolve 21 |
 
 ## 5. Development required
 

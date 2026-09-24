@@ -63,6 +63,26 @@ symbols, captions merged in turn, and `connect_tool_input` on `MediaOut1`
 `Input` from the last Merge. `examples/counting_cards.py` is the worked
 example.
 
+**Start from an Effects Library template instead of raw tools**: you do not
+have to build every title from Background/Text+/Merge. `fusion_templates`
+(GET `/fusion/templates`, filter with `kind` and `contains`) lists every
+title, generator, effect and transition Resolve ships plus installed packs.
+Paste one into a comp and override its text in the same call:
+
+```json
+{"op": "paste_settings", "args": {"item_id": "...", "comp": "1",
+  "template": "titles/Fade On", "inputs": {"Text1": {"StyledText": "Count with me"}}}}
+```
+
+The response lists the tools that appeared (a group operator plus its inner
+tools such as `Text1`, `Merge1`); read them with `list_tool_inputs` to find
+what else to override (font, colour, timing). Fusion-page presets
+(`fusion/Particles/Snow`, lens flares, shaders, styled text) paste the same
+way and make good overlays merged over a card. Call `fusion_fonts` (GET
+`/fusion/fonts`) before choosing a typeface and check it carries your
+glyphs. The first paste into a comp takes a few seconds: the gateway has to
+open the comp on the Fusion page once (it restores your page and playhead).
+
 **Music bed and loudness** (audio levels are not scriptable; prepare the
 stems on disk, then import):
 

@@ -47,7 +47,9 @@ src/dollygrip/
   schemas.py     pydantic REQUEST models only - responses stay loose dicts
   routers/       system (+storage), projects, mediapool, timelines (+ripple-insert), items
                  (+relocate/split composites), markers (factory, mounted 3x), color (graph factory
-                 mounted 4x, groups, gallery), fusion (+input discovery/expressions), render (+SSE
+                 mounted 4x, groups, gallery), fusion (+input discovery/expressions), fusion_more
+                 (templates/fonts, comp attrs/undo/save, graph, Lua paste + _loaded(), duplicate,
+                 presets, keyframe read/clear, modifiers), render (+SSE
                  events), recipes, stock (search/plan/assemble/b-roll), tools (offline timecode), exec_,
                  pages (human HTML at the root: /, /watchtower, /pages/* - rendered Markdown, not in OpenAPI)
   mcp_server.py  OpenAPI -> MCP tools (name = operationId) + resources, in-process ASGI dispatch,
@@ -55,6 +57,8 @@ src/dollygrip/
   stock.py       StockClient: Pexels/Pixabay/Coverr search (filters, 24h cache, key rotation), downloads
                  + source records; fetch/download are injectable (tests use canned responses)
   broll.py       plan_shots: pure shot planning (segments, script_order/random, unique-first, loop)
+  fusion_templates.py  Effects Library / Fusion-page template discovery (folders + .drfx bundles),
+                 find by name or kind/name, extract bundle members to real files for bmd.readfile
   recipes.py     run_recipe: ordered steps of operations with {{ steps.name.path }} templating,
                  dispatched in-process through the app (routers/recipes.py exposes POST /recipes/run)
   cli.py         argparse: serve, doctor, mcp, run
@@ -94,6 +98,9 @@ docs/ROADMAP.md        what to build next
    misbehavior, same-track push, OTIO re-import options, non-enumerable constants):
    read `docs/GOTCHAS.md` BEFORE designing any endpoint, and append every newly discovered
    trap there - it is the project's institutional memory.
+4. **Fusion pastes must go through Lua and a loaded comp.** Python-side `comp.Paste(table)`
+   returns True and pastes nothing; use `fusion_more.lua()` (comp.Execute + SetData) inside
+   `_loaded()`, which opens the comp on the Fusion page first.
 
 ## Conventions for new endpoints
 

@@ -202,3 +202,73 @@ can; the rest you need to know when you reach for `/exec` or extend the API.
   caption from the official lyrics.
 - **`RectangleMask` on a Background's `EffectMask`** makes a rounded panel;
   Center/Width/Height/CornerRadius are 0..1 of the frame.
+
+## Fusion depth: paste, templates, modifiers (live on Resolve Studio 21.0.4, 2026-09-24)
+
+- **`comp.Paste(table)` from Python returns True and pastes nothing.** Nested
+  settings tables do not survive the Python bridge: `tool.SaveSettings()`
+  arrives as `{'Tools': None}`. Paste must run in Fusion's own Lua:
+  `comp.Execute('comp:Paste(bmd.readfile([[path]]))')`. The gateway's `lua()`
+  helper wraps the body in `pcall` and hands the status (and any result) back
+  through `comp:SetData` / `comp.GetData`, so a Lua error becomes a 422 with
+  Fusion's own message.
+- **`comp.Execute` returns before heavy scripts finish** (a particle preset
+  paste took seconds). `lua()` polls the SetData status key until it appears
+  (20 s default) instead of trusting the return.
+- **Paste and FlowView only work once the comp has been opened on the Fusion
+  page**: `comp.CurrentFrame` is None until then. The Fusion page shows the
+  clip UNDER THE PLAYHEAD, so loading a comp for an item means: park the
+  playhead on the item, `item.LoadFusionCompByName`, `resolve.OpenPage("fusion")`,
+  wait for `CurrentFrame`, settle about 1 s, then restore page and playhead.
+  The gateway does this automatically (`_loaded`) before pastes and duplicates,
+  which is why the first paste into a comp takes a few seconds.
+- **`COMPN_RenderEnd` is clamped to `COMPN_GlobalEnd`.** Setting both in one
+  `SetAttrs` can leave the render end short. PATCH `.../attrs` applies the
+  global range first, then the rest.
+- **Modifier constructors that exist**: `comp.BezierSpline / Path / XYPath /
+  Shake / Calculation / Offset / Expression / Probe / KeyStretcher`.
+  `comp.Perturb` and `comp.Follower` are None in both Python and Lua. Calling
+  a constructor without assigning it to an input leaves an orphan modifier
+  tool in the comp, so the modifier endpoint only constructs while attaching.
+- **Only `BezierSpline` holds keys.** Shake & co answer `GetKeyFrames` with
+  their valid range `{1: -1e9, 2: 1e9}`, not keys. A spline's `GetKeyFrames`
+  returns `{frame: {1: value, 'RH': {...}, 'LH': {...}}}`; GET `.../keyframes`
+  drops the RH/LH handle tables and reads keys from splines only (a non-spline
+  driver is reported as `modifier`).
+- **`input.ConnectTo(None)` detaches a spline/modifier**, and the input then
+  holds whatever value the animation had at the comp's current time. DELETE
+  `.../keyframes` sets a static value explicitly afterwards (`?value=` or the
+  current animated value).
+- **Two coordinate systems for node positions**: FlowView positions are grid
+  units (about 1.5, 1.0) while the `ViewInfo.Pos` stored in tool settings is
+  something else (e.g. 385, 82). GET `.../graph` reports which one it used in
+  `position_units` (`flow` when the comp is open on the Fusion page,
+  `settings` otherwise); PATCH `position` sets FlowView units.
+- **These work from Python as-is**: `tool.SaveSettings(path)` /
+  `tool.LoadSettings(path)` with real file paths, `tool.TileColor = {"R", "G",
+  "B"}`, `TOOLB_Locked` via `SetAttrs`, and
+  `fusion.FontManager.GetFontList()` (a dict of 281 fonts on this machine).
+- **Effects Library templates are `.setting` files.** The built-ins ship
+  zipped in `C:\Program Files\Blackmagic Design\DaVinci Resolve\Fusion\Templates\Templates.drfx`
+  (`Edit/Titles|Generators|Effects|Transitions/*.setting` plus
+  `Fusion/Particles|Shaders|Lens Flares|Styled Text|.../*.setting`); user packs
+  are `.drfx` bundles or loose files under
+  `%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Templates` and
+  `%PROGRAMDATA%\...\Fusion\Templates`. The file stem is the name
+  `InsertFusionTitleIntoTimeline` expects. GET `/fusion/templates` lists 2302
+  here (titles 1760 incl. user packs, transitions 315, fusion 143, generators
+  54, effects 30). Fusion cannot read zip members, so the gateway extracts to
+  `%TEMP%\dollygrip\fusion_templates` before `bmd.readfile`.
+- **A pasted template arrives as a `GroupOperator`** (e.g. `FadeOn`) plus its
+  inner tools listed flat (`Text1`, `Merge1`, `Blur1`, `AnimCurves`...).
+  Override the inner tools' inputs (`Text1.StyledText`) or the group's
+  published inputs; the paste endpoint returns the new tool names so you know
+  which to target.
+- **Second hard freeze on a Fusion write (2026-09-24).** A template paste into
+  a freshly loaded comp, while two other comps in the same timeline held a
+  particle system, froze Resolve completely (UI dead, CPU flat, no recovery in
+  three minutes; killed and relaunched, the unsaved throwaway project was
+  lost). `_loaded` now calls `DisableBackgroundTasksForCurrentResolveSession`
+  before opening a comp on the Fusion page, and a paste is bracketed by
+  client timeouts. Keep heavy Fusion-page presets (particles, 3D) out of a
+  timeline you are still scripting against, or paste them last.
