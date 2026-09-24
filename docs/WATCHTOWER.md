@@ -5,8 +5,8 @@ against a real Resolve, what is pending, what was decided and why, and what
 development is required next. Update it in the same commit as the change it
 describes. Agents get it as the MCP resource `dollygrip://watchtower`.
 
-_Last updated: 2026-09-24 · version 0.5.0 · 38 commits · 139 tests green ·
-302 operations · verified on DaVinci Resolve Studio 21.0.4.5 (Windows 11)_
+_Last updated: 2026-09-24 · version 0.5.0 · 39 commits · 150 tests green ·
+316 operations · verified on DaVinci Resolve Studio 21.0.4.5 (Windows 11)_
 
 ---
 
@@ -15,7 +15,7 @@ _Last updated: 2026-09-24 · version 0.5.0 · 38 commits · 139 tests green ·
 | Signal | State |
 |---|---|
 | API coverage of Blackmagic's Resolve 21 scripting README | Complete - every object and method has a typed endpoint |
-| Undocumented Fusion comp/tool API | Covered for the parts a video needs: tools, inputs, discovery, connections, keyframes, expressions, bypass, comps CRUD |
+| Undocumented Fusion comp/tool API | Covered: comps CRUD + attrs/undo/save, tools CRUD + lock/colour/position, input discovery, connections, node graph, keyframes (set/read/clear), expressions, modifiers (Shake/Path/Perturb/Follower), paste macros with overrides, duplicate/presets, template + font discovery. Live verification of the 2026-09-24 additions in progress |
 | Live verification | 116-step smoke, composite edits, stock providers (Pexels, Pixabay, Coverr) and three full productions on Studio 21.0.4 |
 | Test suite | 129 pytest cases against `tests/fake_resolve.py` (the contract); no Resolve needed |
 | Agent integration | `dollygrip mcp` (stdio, mcp 1.x and 2.x), profiles, resources; README CLAUDE.md snippet for plain HTTP |
@@ -36,7 +36,7 @@ Operation counts are from the live OpenAPI document (`GET /openapi.json`).
 | **Render** | 29 | formats/codecs/resolutions, presets (list/load/save/delete/import/export), queue (preset/format/mode/settings), start/stop, **wait**, **SSE progress**, quick export, burn-in presets | yes |
 | **Projects** | 28 | list/create/open/rename/save/close/delete, settings, presets, project folders, import/export/archive/restore, databases, Fairlight presets, AI speech generation | yes (speech needs the Extras) |
 | **System** | 25 | health, info, constants, page switching, layout and preference presets, background tasks, quit (confirmed), Media Storage browsing and add-to-pool | yes (Media Storage lists only inside configured locations) |
-| **Fusion** | 19 | comps (list/add/import/rename/load/export/delete), tools (list/add/get/rename/bypass/delete), **input discovery** with control type, range, default, page, set inputs, **expressions**, connect, **keyframes** (real splines), `text-plus` helper, current comp on the Fusion page | yes - two full productions built this way |
+| **Fusion** | 33 | comps (list/add/import/rename/load/export/delete, **attrs** incl. comp time / render range / HiQ, **undo groups**, save), tools (list with type filter, add/get/rename/bypass/**lock/tile colour/flow position**/delete, **duplicate**, **preset save/load**), **input discovery** with control type, range, default, page, set inputs, **expressions**, connect, **node graph** (edges + positions), **keyframes** (set / read back / clear), **modifiers** (Shake, Path, XYPath, Perturb, Follower), **paste macros / `.setting` templates with per-tool overrides**, `text-plus` helper (+ shadow/outline/tracking), current comp on the Fusion page, **template discovery** (Titles/Generators/Effects/Transitions names), **font list** | 19 ops: yes - three productions; 14 new ops (2026-09-24): fake-tested, live probe in progress |
 | **Stock** | 6 | Pexels / Pixabay / Coverr search with aspect, duration and rendition filters, 24 h cache, key rotation; shot planner (script order or random, unique sources first, loop to cover the voiceover); Resolve-native assemble with source-fps conversion and fill/fit; one-call `b-roll` | yes - all three providers searched live 2026-09-24; plan + download and a 26-clip assemble verified (ABC Song) |
 | **Recipes** | 2 | `POST /recipes/run` and `dollygrip run`: ordered steps of any operation with `{{ steps.name.path }}` templating, dry-run, stop-on-error; `GET /recipes/operations` | yes |
 | **Tools** | 1 | timecode <-> frames, drop-frame aware | yes |
@@ -53,7 +53,7 @@ Ordered by value to the standing goal ("Claude can do everything a human can in 
 | P2 | **Push** the 32 local commits to github.com/thedumbstuff/dollygrip | v0.1 is what the world sees; v0.5 is local | XS - user action ("never push unless asked") |
 | P3 | **Retime** - Resolve exposes `RetimeProcess` but no speed setter | slow-mo / speed ramps are basic editing | M - composite via Fusion clip + TimeSpeed tool |
 | P4 | **Cross-dissolves between clips** - no transition API | stock b-roll cuts only | M - Fusion clip composite or a dissolve recipe over paired items |
-| P5 | **Fusion macro import with overrides** - `.setting` templates in one call | data-driven motion graphics from the Effects Library | S |
+| P5 | **Fusion macro import with overrides** - `.setting` templates in one call | data-driven motion graphics from the Effects Library | BUILT 2026-09-24 (`POST .../comps/{comp}/paste`); pending: live verification + reading templates out of `.drfx` bundles |
 | P6 | **Recipe library** - vertical reel, podcast clip, dailies with burn-ins, music video | agents start from proven pipelines | S each |
 | P7 | **Progress for long AI analyses** (transcription, IntelliSearch) | today: fire and hope | M - heuristic watcher; Resolve gives no callbacks |
 | P8 | **LLM keyword extraction** step for stock b-roll (script -> search terms) | completes the MoneyPrinterTurbo loop end to end | S - recipe step calling a model |
@@ -93,7 +93,7 @@ Concrete work, with the file it lands in.
 **Gateway**
 - Retime composite: `routers/items.py` `retime` op (Fusion clip + `TimeSpeed`), fake support, gotcha entry (P3).
 - Dissolve composite for two adjacent items: `routers/items.py` or a recipe (P4).
-- `POST /fusion/items/{id}/comps/import-template` with `overrides` (P5).
+- P5 follow-up: `.drfx` bundle support in `fusion_templates.py` (built-ins ship zipped in `Program Files/.../Fusion/Templates/Templates.drfx`) and a `template` shortcut on `paste`.
 - Stock: `keywords_from_script` step (LLM call behind an env-selected provider) and an `ai` provider adapter in `stock.py` (P8, P9).
 - Optional: analysis watcher for `transcribe_*` / `intellisearch_*` (P7).
 
