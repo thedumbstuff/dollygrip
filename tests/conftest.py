@@ -74,3 +74,11 @@ def item_ids(client, track_type=None):
     r = client.get("/api/v1/timelines/current/items", params={"track_type": track_type} if track_type else None)
     assert r.status_code == 200, r.text
     return [i["id"] for i in r.json()["items"]]
+
+
+@pytest.fixture(autouse=True)
+def _no_fusion_settle(monkeypatch):
+    """The fake comp is ready instantly; skip the real-Resolve settle sleep."""
+    from dollygrip.routers import fusion_more
+
+    monkeypatch.setattr(fusion_more, "SETTLE_SECONDS", 0)

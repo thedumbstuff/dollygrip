@@ -245,7 +245,10 @@ def patch_tool(item_id: str, comp: str, tool: str, body: PatchTool, bridge: Reso
         except Exception as e:
             raise Rejected(f"TileColor failed: {e}") from e
     if body.position is not None:
+        from .fusion_more import _loaded  # comp must have been opened on the Fusion page once
+
         c = _comp(bridge, item_id, comp)
+        _loaded(bridge, bridge.item(item_id), c)
         try:
             flow = c.CurrentFrame.FlowView
             flow.SetPos(t, float(body.position[0]), float(body.position[1]))

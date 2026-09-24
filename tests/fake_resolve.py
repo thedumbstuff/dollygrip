@@ -628,12 +628,24 @@ class FakeInput:
         self.tool, self.name = tool, name
 
     def GetConnectedOutput(self):
-        return self.tool.splines.get(self.name)
+        spline = getattr(self.tool, "splines", {}).get(self.name)
+        if spline is not None:
+            return spline
+        source = getattr(self.tool, "connections", {}).get(self.name)
+        comp = getattr(self.tool, "comp", None)
+        src_tool = comp.tools.get(source) if comp is not None and source else None
+        return FakeOutput(src_tool) if src_tool is not None else None
+
+    def GetTool(self):
+        return self.tool
 
     def ConnectTo(self, output):
         if output is None:
             self.tool.splines.pop(self.name, None)
             self.tool.keyframes.pop(self.name, None)
+            self.tool.connections.pop(self.name, None)
+        elif isinstance(output, FakeOutput):
+            self.tool.connections[self.name] = output.tool.Name
         else:
             self.tool.connections[self.name] = getattr(output, "Name", str(output))
         return True
@@ -650,7 +662,8 @@ class FakeInput:
         return {"INPS_Name": self.name, "INPS_ID": self.name, "INPB_Connected": self.name in self.tool.connections,
                 "INPID_InputControl": "TextEditControl" if self.name == "StyledText" else "SliderControl",
                 "INPS_DataType": "Text" if self.name in ("StyledText", "Font") else "Number",
-                "INPN_MinScale": 0.0, "INPN_MaxScale": 1.0, "INPN_Default": 0.08, "INPS_ICS_ControlPage": page}
+                "INPN_MinScale": 0.0, "INPN_MaxScale": 1.0, "INPS_ICS_ControlPage": page,
+                **({} if self.name in ("StyledText", "Font") else {"INPN_Default": 0.08})}
 
     def SetExpression(self, expr):
         if expr is None:
@@ -660,6 +673,23 @@ class FakeInput:
 
     def GetExpression(self):
         return self.tool.expressions.get(self.name)
+
+
+class FakeOutput:
+    """A tool's main Output: attrs + the inputs it feeds (tool.GetOutputList())."""
+
+    def __init__(self, tool, name="Output"):
+        self.tool, self.name = tool, name
+
+    def GetAttrs(self):
+        return {"OUTS_ID": self.name, "OUTS_Name": self.name, "OUTS_DataType": "Image"}
+
+    def GetTool(self):
+        return self.tool
+
+    def GetConnectedInputs(self):
+        fed = [FakeInput(t, inp) for t in self.tool.comp.tools.values() for inp, src in t.connections.items() if src == self.tool.Name]
+        return {i + 1: x for i, x in enumerate(fed)}
 
 
 class FakeTool:
@@ -673,11 +703,12 @@ class FakeTool:
         self.splines = {}
         self.pass_through = False
         self.locked = False
+        self.selected = False
         self.TileColor = None
         self.deleted = False
 
     def GetAttrs(self):
-        return {"TOOLS_Name": self.Name, "TOOLS_RegID": self.reg_id, "TOOLB_PassThrough": self.pass_through, "TOOLB_Selected": False, "TOOLB_Locked": self.locked}
+        return {"TOOLS_Name": self.Name, "TOOLS_RegID": self.reg_id, "TOOLB_PassThrough": self.pass_through, "TOOLB_Selected": self.selected, "TOOLB_Locked": self.locked}
 
     def SetAttrs(self, attrs):
         if "TOOLS_Name" in attrs:
@@ -687,6 +718,8 @@ class FakeTool:
             self.pass_through = bool(attrs["TOOLB_PassThrough"])
         if "TOOLB_Locked" in attrs:
             self.locked = bool(attrs["TOOLB_Locked"])
+        if "TOOLB_Selected" in attrs:
+            self.selected = bool(attrs["TOOLB_Selected"])
         return True
 
     def SaveSettings(self, path=None):
@@ -729,19 +762,32 @@ class FakeTool:
         self.connections[name] = source.Name
         return True
 
+    def GetOutputList(self):
+        return {1: FakeOutput(self)}
+
     def Delete(self):
         self.deleted = True
         self.comp.tools.pop(self.Name, None)
 
     def __getattr__(self, name):
-        if name.startswith("_") or name in ("comp", "reg_id", "Name", "ID", "inputs", "keyframes", "connections", "expressions", "splines", "pass_through", "locked", "TileColor", "deleted"):
+        if name.startswith("_") or name in ("comp", "reg_id", "Name", "ID", "inputs", "keyframes", "connections", "expressions", "splines", "pass_through", "locked", "selected", "TileColor", "deleted"):
             raise AttributeError(name)
         return FakeInput(self, name)
 
 
 class FakeFlowView:
-    def __init__(self):
+    def __init__(self, comp=None):
         self.pos = {}
+        self.comp = comp
+
+    def Select(self, tool=None, select=True):
+        """FlowView:Select() with no tool deselects everything."""
+        if tool is None:
+            for t in (self.comp.tools.values() if self.comp else []):
+                t.selected = False
+        else:
+            tool.selected = bool(select)
+        return True
 
     def SetPos(self, tool, x, y):
         self.pos[tool.Name] = (x, y)
@@ -753,8 +799,8 @@ class FakeFlowView:
 
 
 class FakeFrame:
-    def __init__(self):
-        self.FlowView = FakeFlowView()
+    def __init__(self, comp=None):
+        self.FlowView = FakeFlowView(comp)
 
 
 class FakeComp:
@@ -764,8 +810,12 @@ class FakeComp:
         self.locked = False
         self.saved_to = None
         self.saved_settings = {}
-        self.CurrentFrame = FakeFrame()
+        self.CurrentFrame = None  # becomes a frame once the comp is loaded on the Fusion page
+        self.data = {}
         self.undo = []
+        self.undo_stack, self.redo_stack = [], []  # names of undo groups (GetUndoStack / GetRedoStack)
+        self.markers = {}
+        self.ActiveTool = None
         self.attrs = {"COMPN_RenderStart": 0, "COMPN_RenderEnd": 149, "COMPN_CurrentTime": 0, "COMPS_Name": name}
         self.AddTool("MediaIn")
         self.AddTool("MediaOut")
@@ -774,7 +824,7 @@ class FakeComp:
             t.SetAttrs({"TOOLS_Name": "Template"})
 
     def GetToolList(self, selectedOnly=False, toolType=None):
-        tools = [t for t in self.tools.values() if toolType in (None, "") or t.reg_id == toolType]
+        tools = [t for t in self.tools.values() if (toolType in (None, "") or t.reg_id == toolType) and (not selectedOnly or t.selected)]
         return {i + 1: t for i, t in enumerate(tools)}
 
     def AddTool(self, reg_id, x=None, y=None):
@@ -798,7 +848,55 @@ class FakeComp:
 
     def EndUndo(self, keep=True):
         self.undo.append(("end", keep))
+        if keep:
+            started = [x[1] for x in self.undo if x[0] == "start"]
+            self.undo_stack.append(started[-1] if started else "Undo")
+            self.redo_stack.clear()
         return True
+
+    def GetUndoStack(self):
+        return {i + 1: {"Name": n} for i, n in enumerate(self.undo_stack)}
+
+    def GetRedoStack(self):
+        return {i + 1: {"Name": n} for i, n in enumerate(self.redo_stack)}
+
+    def Undo(self, count=1):
+        for _ in range(int(count)):
+            if self.undo_stack:
+                self.redo_stack.append(self.undo_stack.pop())
+
+    def Redo(self, count=1):
+        for _ in range(int(count)):
+            if self.redo_stack:
+                self.undo_stack.append(self.redo_stack.pop())
+
+    def ClearUndo(self):
+        self.undo_stack.clear()
+        self.redo_stack.clear()
+
+    def GetMarkers(self):
+        return {float(f): dict(m) for f, m in self.markers.items()}
+
+    def SetMarker(self, frame, marker):
+        if marker is None:
+            self.markers.pop(int(frame), None)
+        else:
+            self.markers[int(frame)] = {"Name": marker.get("Name", ""), "Note": marker.get("Note", ""), "Color": marker.get("Color", "")}
+        return True
+
+    def SetActiveTool(self, tool):
+        self.ActiveTool = tool
+
+    def _key_times(self):
+        return sorted({float(f) for t in self.tools.values() for keys in t.keyframes.values() for f in keys})
+
+    def GetNextKeyTime(self, time, tool=None):
+        later = [f for f in self._key_times() if f > time]
+        return later[0] if later else None
+
+    def GetPrevKeyTime(self, time, tool=None):
+        earlier = [f for f in self._key_times() if f < time]
+        return earlier[-1] if earlier else None
 
     def Paste(self, table):
         """Settings table -> new tools (names get a numeric suffix like Fusion)."""
@@ -821,11 +919,72 @@ class FakeComp:
     def Shake(self):
         return FakeModifier("Shake")
 
-    def Perturb(self):
-        return FakeModifier("Perturb")
+    def Calculation(self):
+        return FakeModifier("Calculation")
 
-    def Follower(self):
-        return FakeModifier("Follower")
+    def Offset(self):
+        return FakeModifier("Offset")
+
+    def Expression(self):
+        return FakeModifier("Expression")
+
+    def Probe(self):
+        return FakeModifier("Probe")
+
+    def KeyStretcher(self):
+        return FakeModifier("KeyStretcher")
+
+    # Lua bridge: the real comp.Execute runs Lua in Fusion; the fake understands the
+    # exact snippets the gateway generates (pcall wrapper + SetData hand-back).
+    def GetData(self, key):
+        return self.data.get(key)
+
+    def SetData(self, key, value):
+        self.data[key] = value
+        return True
+
+    def _read_setting_file(self, path):
+        if path in self.saved_settings:
+            return self.saved_settings[path]
+        try:
+            import json
+
+            return json.loads(open(path, encoding="utf-8").read())
+        except Exception:
+            return None
+
+    def Execute(self, script):
+        import re
+
+        m = re.match(r'local ok, err = pcall\(function\(\) (.*) end\) comp:SetData\("(dg_[0-9a-f]+)", ok and "ok" or tostring\(err\)\)$', script, re.S)
+        if not m:
+            return None
+        body, key = m.group(1), m.group(2)
+        try:
+            if self.CurrentFrame is None and "Paste" in body:
+                raise RuntimeError("comp not loaded")  # real Fusion silently pastes nothing; the fake is louder
+            pm = re.match(r"comp:Paste\(bmd\.readfile\(\[\[(.*)\]\]\)\)$", body)
+            dm = re.match(r'comp:Paste\(comp:FindTool\("(.*)"\):SaveSettings\(\)\)$', body)
+            if pm:
+                table = self._read_setting_file(pm.group(1))
+                if not table:
+                    raise RuntimeError(f"bad argument #1 to 'Paste' (table expected, got nil) for {pm.group(1)}")
+                self.Paste(table)
+            elif dm:
+                tool = self.FindTool(dm.group(1))
+                if tool is None:
+                    raise RuntimeError("attempt to index a nil value (tool)")
+                self.Paste(tool.SaveSettings())
+            elif body == 'comp:SetData("dg_out", 1)':
+                self.data["dg_out"] = 1
+            elif 'comp:SetData("dg_out", p)' in body:
+                self.data["dg_out"] = {name: ({1: p[0], 2: p[1]} if p else False) for name, p in ((t.Name, self.CurrentFrame.FlowView.pos.get(t.Name) if self.CurrentFrame else None) for t in self.tools.values())}
+            else:
+                raise RuntimeError(f"fake cannot run: {body}")
+            self.data[key] = "ok"
+        except Exception as e:
+            self.data[key] = str(e)
+        return None
 
     def Save(self, path):
         self.saved_to = path
@@ -1070,7 +1229,10 @@ class FakeTimelineItem(Markable, Flaggable):
         return len(self.comps) != before
 
     def LoadFusionCompByName(self, name):
-        return self.GetFusionCompByName(name)
+        comp = self.GetFusionCompByName(name)
+        if comp is not None and comp.CurrentFrame is None:
+            comp.CurrentFrame = FakeFrame(comp)
+        return comp
 
     def RenameFusionCompByName(self, old, new):
         comp = self.GetFusionCompByName(old)
@@ -1857,9 +2019,18 @@ class FakeFusion:
     def __init__(self):
         self.current_comp = FakeComp("Composition 1", with_text=True)
         self.FontManager = FakeFontManager()
+        self.reg_summary = {
+            "TextPlus": {"Name": "Text+", "ID": "TextPlus", "Category": "Generators"},
+            "Merge": {"Name": "Merge", "ID": "Merge", "Category": "Composite"},
+            "Background": {"Name": "Background", "ID": "Background", "Category": "Generators"},
+            "Blur": {"Name": "Blur", "ID": "Blur", "Category": "Blur"},
+        }
 
     def GetCurrentComp(self):
         return self.current_comp
+
+    def GetRegSummary(self):
+        return dict(self.reg_summary)
 
 
 _CONSTANTS = {

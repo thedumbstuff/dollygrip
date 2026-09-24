@@ -631,8 +631,9 @@ class CompUndo(BaseModel):
 
 
 class PasteSettings(BaseModel):
+    template: Optional[str] = Field(default=None, description="An Effects Library / Fusion template by name or kind/name (GET /fusion/templates), e.g. 'titles/Fade On', 'fusion/Particles/Snow'")
     path: Optional[str] = Field(default=None, description=".setting / .comp / macro file on the Resolve machine")
-    settings: Optional[Dict[str, Any]] = Field(default=None, description="A Fusion settings table instead of a file")
+    settings_text: Optional[str] = Field(default=None, description="The text of a .setting file (a Lua settings table) instead of a file")
     inputs: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, description="Per-tool input overrides applied after the paste: {tool_name: {input: value}}")
     detail: bool = Field(default=False, description="Return full input listings for the pasted tools")
 
@@ -648,7 +649,7 @@ class ToolSettingsPath(BaseModel):
 
 class ToolModifier(BaseModel):
     input: str
-    modifier: Literal["BezierSpline", "Path", "XYPath", "Shake", "Perturb", "Follower", "Calculation", "Offset"] = "Shake"
+    modifier: Literal["BezierSpline", "Path", "XYPath", "Shake", "Calculation", "Offset", "Expression", "Probe", "KeyStretcher"] = "Shake"
     inputs: Dict[str, Any] = Field(default_factory=dict, description="Inputs to set on the modifier itself")
 
 
@@ -667,6 +668,41 @@ class TextPlus(BaseModel):
     line_spacing: Optional[float] = Field(default=None, description="Line spacing (1.0 = normal)")
     extra_inputs: Dict[str, Any] = Field(default_factory=dict)
 
+
+
+class CompMarker(BaseModel):
+    frame: int = Field(description="Comp frame the marker sits on")
+    name: str
+    note: Optional[str] = None
+    color: Optional[str] = Field(default=None, description="Marker colour name, e.g. 'Red', 'Blue'")
+
+
+class SetActiveTool(BaseModel):
+    tool: str = Field(description="Tool name to make active (the one the Inspector shows)")
+
+
+class CompHistoryStep(BaseModel):
+    action: Literal["undo", "redo"]
+    count: int = Field(default=1, ge=1, description="How many steps")
+
+
+class SelectTools(BaseModel):
+    tools: List[str] = Field(min_length=1, description="Tool names to select")
+    exclusive: bool = Field(default=False, description="Deselect everything else first")
+
+
+class DisconnectInput(BaseModel):
+    input: str = Field(description="Input name on this tool whose upstream tool connection is cut, e.g. 'Background'")
+
+
+class ResetInput(BaseModel):
+    input: str = Field(description="Input name to reset to its default (numeric inputs only)")
+
+
+class TextPlusLines(BaseModel):
+    lines: List[str] = Field(min_length=1, description="Lines of text, joined with newlines into StyledText")
+    comp: Optional[str] = Field(default=None, description="Comp name or 1-based index; default = the item's current comp")
+    tool: Optional[str] = Field(default=None, description="Text+ tool name; default = the first TextPlus tool")
 
 # --------------------------------------------------------------------------
 # render
