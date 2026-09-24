@@ -194,3 +194,11 @@ can; the rest you need to know when you reach for `/exec` or extend the API.
   at a frame OUTSIDE your window.
 - **A Merge with no Background outputs nothing** - and every tool downstream
   goes black. The first layer of a chain must be the background itself.
+- **A comp meant to overlay lower tracks must stay transparent all the way
+  down**: root Background with alpha 0 AND any fade/base Background at the end
+  of the chain with alpha 0. One opaque black base hid 26 stock clips on V1.
+- **Whisper splits sung letters into tokens** (`A`, `-B`, `-C`, `-D,`) and
+  mishears the letters in "X is for ..." lines; anchor on the object words and
+  caption from the official lyrics.
+- **`RectangleMask` on a Background's `EffectMask`** makes a rounded panel;
+  Center/Width/Height/CornerRadius are 0..1 of the frame.
