@@ -878,11 +878,14 @@ class FakeComp:
         return {float(f): dict(m) for f, m in self.markers.items()}
 
     def SetMarker(self, frame, marker):
+        """Live shape: table.time is authoritative; None deletes; returns None."""
         if marker is None:
             self.markers.pop(int(frame), None)
-        else:
-            self.markers[int(frame)] = {"Name": marker.get("Name", ""), "Note": marker.get("Note", ""), "Color": marker.get("Color", "")}
-        return True
+            return None
+        self.markers.pop(int(frame), None)
+        t = float(marker.get("time", frame))
+        self.markers[int(t)] = {"time": t, "name": marker.get("name", ""), "note": marker.get("note", ""), "duration": float(marker.get("duration", 0)), "customData": marker.get("customData", "")}
+        return None
 
     def SetActiveTool(self, tool):
         self.ActiveTool = tool
@@ -963,12 +966,12 @@ class FakeComp:
         try:
             if self.CurrentFrame is None and "Paste" in body:
                 raise RuntimeError("comp not loaded")  # real Fusion silently pastes nothing; the fake is louder
-            pm = re.match(r"comp:Paste\(bmd\.readfile\(\[\[(.*)\]\]\)\)$", body)
+            pm = re.match(r'local t = bmd\.readfile\(\[\[(.*)\]\]\) if not t then error\("(.*)"\) end comp:Paste\(t\)$', body)
             dm = re.match(r'comp:Paste\(comp:FindTool\("(.*)"\):SaveSettings\(\)\)$', body)
             if pm:
                 table = self._read_setting_file(pm.group(1))
                 if not table:
-                    raise RuntimeError(f"bad argument #1 to 'Paste' (table expected, got nil) for {pm.group(1)}")
+                    raise RuntimeError(pm.group(2))
                 self.Paste(table)
             elif dm:
                 tool = self.FindTool(dm.group(1))

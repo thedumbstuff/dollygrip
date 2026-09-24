@@ -5,14 +5,16 @@ tool registry, input reset and a multi-line Text+ convenience.
 UNVERIFIED on live Resolve (the live-probe pass must check these; the fake
 mirrors the shapes assumed here):
 
-- comp.GetMarkers() -> {frame: {Name, Note, Color}} and comp.SetMarker(frame,
-  table | None) - marker names/shape are a guess from Fusion 9+ docs.
+- (VERIFIED 2026-09-24) comp.GetMarkers() -> {time: {time, name, note, duration,
+  customData}}; comp.SetMarker(frame, table) adds/replaces (table.time wins),
+  comp.SetMarker(frame, None) deletes.
 - comp.ActiveTool (attribute) and comp.SetActiveTool(tool | None).
 - comp.GetUndoStack() / comp.GetRedoStack() (table shape unknown: strings or
   {Name=...}); comp.Undo(n) / comp.Redo(n) / comp.ClearUndo() are documented.
-- comp.GetNextKeyTime(t) / comp.GetPrevKeyTime(t): what "no key" returns
-  (nil, the same time, or a +-1e9 sentinel) is unknown - all are read as
-  "not found".
+- (VERIFIED 2026-09-24) comp.GetNextKeyTime(t) / comp.GetPrevKeyTime(t) answer
+  an out-of-range x.9999 value when there is no further key (119.9999 on a
+  120-frame comp, 1000.9999 when asked from 100 on a 9-frame comp); anything
+  at or past the comp's range end, and +-1e8 sentinels, read as "not found".
 - tool.SetAttrs({TOOLB_Selected}) may be read-only; FlowView.Select() (only
   when the comp is loaded on the Fusion page) is used as well.
 - tool.GetOutputList() / output.GetConnectedInputs() / input.GetTool().
@@ -69,7 +71,8 @@ def _markers(comp) -> List[Dict[str, Any]]:
     out = []
     for frame, m in (raw.items() if isinstance(raw, dict) else []):
         m = m if isinstance(m, dict) else {}
-        out.append({"frame": _frame_label(frame), "name": m.get("Name"), "note": m.get("Note"), "color": m.get("Color")})
+        # live shape: {time: {"time", "name", "note", "duration", "customData"}} (lowercase, no colour)
+        out.append({"frame": _frame_label(m.get("time", frame)), "name": m.get("name", m.get("Name")), "note": m.get("note", m.get("Note")), "duration": m.get("duration", 0), "custom_data": m.get("customData")})
     return sorted(out, key=lambda x: float(x["frame"]) if isinstance(x["frame"], (int, float)) else 0)
 
 
@@ -82,9 +85,12 @@ def fusion_comp_markers(item_id: str, comp: str, bridge: ResolveBridge = Depends
 
 @router.put("/items/{item_id}/comps/{comp}/markers")
 def set_fusion_comp_marker(item_id: str, comp: str, body: CompMarker, bridge: ResolveBridge = Depends(resolve_session)):
-    """Add or replace the comp marker at `frame` (comp.SetMarker(frame, {Name, Note, Color}))."""
+    """Add or replace the comp marker at `frame`. Live shape (Resolve 21):
+    `comp.SetMarker(frame, {time, name, note, duration, customData})` - the
+    table's `time` is authoritative, the first argument only picks the marker
+    to replace, so both are set to `frame`. Comp markers have no colour."""
     c = _comp(bridge, item_id, comp)
-    marker = {"Name": body.name, "Note": body.note or "", **({"Color": body.color} if body.color else {})}
+    marker = {"time": float(body.frame), "name": body.name, "note": body.note or "", "duration": float(body.duration), "customData": body.custom_data or ""}
     try:
         ok = c.SetMarker(body.frame, marker)
     except Exception as e:
@@ -223,7 +229,14 @@ def comp_key_time(
         t = float(t) if t is not None else None
     except (TypeError, ValueError):
         t = None
-    if t is None or abs(t) >= _NO_KEY or t == float(from_) or (direction == "next" and t < from_) or (direction == "prev" and t > from_):
+    attrs = safe(c.GetAttrs, default={}) or {}
+    # Live (Resolve 21): with no further key Fusion answers a value at or beyond the comp's
+    # range end with a .9999 fraction (119.9999 on a 120-frame comp; 1000.9999 when asked from
+    # frame 100 on a 9-frame comp) - anything at/past the range end is "no key".
+    bounds = [attrs.get("COMPN_RenderEnd"), attrs.get("COMPN_GlobalEnd")] if direction == "next" else [attrs.get("COMPN_RenderStart"), attrs.get("COMPN_GlobalStart")]
+    bounds = [float(b) for b in bounds if b is not None]
+    out_of_range = t is not None and bool(bounds) and ((direction == "next" and t >= max(bounds) - 0.01) or (direction == "prev" and t <= min(bounds) + 0.01))
+    if t is None or abs(t) >= _NO_KEY or out_of_range or t == float(from_) or (direction == "next" and t < from_) or (direction == "prev" and t > from_):
         return {"from": _frame_label(from_), "direction": direction, "frame": None, "found": False}
     return {"from": _frame_label(from_), "direction": direction, "frame": _frame_label(t), "found": True}
 

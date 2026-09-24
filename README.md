@@ -251,7 +251,7 @@ The scripting API has traps that cost real hours. DollyGrip's endpoints encode t
 - Per-timeline custom settings only stick if `useCustomSettings` is set first - the create and settings endpoints do the dance in order.
 - `resolve.*` constants are not enumerable through `dir()`; the export/subtitle/sync endpoints take plain names and look the values up.
 - Fusion wants 1-based tables for points and colors; send `[x, y]` / `[r, g, b, a]` lists.
-- A Python-side `comp.Paste(table)` returns True and pastes nothing, and pastes only land once the comp has been opened on the Fusion page. The paste/duplicate endpoints run the paste in Fusion's Lua and open the comp on the Fusion page for you (playhead parked on the item, page and playhead restored), so the first paste into a comp takes a few seconds.
+- A Python-side `comp.Paste(table)` returns True and pastes nothing, and pastes only land once the comp has been opened on the Fusion page. The paste/duplicate endpoints run the paste in Fusion's Lua and open the comp on the Fusion page for you (playhead parked on the item; the Fusion page stays open - switching back right after a paste froze Resolve, use `POST /system/page` afterwards), so the first paste into a comp takes a few seconds.
 - Overlapping appends on one track get pushed, stills and numbered image sequences misbehave, OTIO re-import needs `import_source_clips: false` - see the gotchas doc.
 
 ## Security

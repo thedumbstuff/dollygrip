@@ -219,7 +219,8 @@ can; the rest you need to know when you reach for `/exec` or extend the API.
   page**: `comp.CurrentFrame` is None until then. The Fusion page shows the
   clip UNDER THE PLAYHEAD, so loading a comp for an item means: park the
   playhead on the item, `item.LoadFusionCompByName`, `resolve.OpenPage("fusion")`,
-  wait for `CurrentFrame`, settle about 1 s, then restore page and playhead.
+  wait for `CurrentFrame`, settle about 1 s - and then LEAVE the page and
+  playhead there (see the freeze bullet below; the response reports what moved).
   The gateway does this automatically (`_loaded`) before pastes and duplicates,
   which is why the first paste into a comp takes a few seconds.
 - **`COMPN_RenderEnd` is clamped to `COMPN_GlobalEnd`.** Setting both in one
@@ -272,3 +273,44 @@ can; the rest you need to know when you reach for `/exec` or extend the API.
   before opening a comp on the Fusion page, and a paste is bracketed by
   client timeouts. Keep heavy Fusion-page presets (particles, 3D) out of a
   timeline you are still scripting against, or paste them last.
+- **`tool.GetInput(name)` on an input driven by a Calculation / AnimCurves
+  (LUTLookup) / Expression modifier deadlocks Resolve.** Bisected after four
+  hard freezes: after pasting the "Fade On" title template, `GetAttrs` on
+  every input, `GetInput("StyledText")`, `GetInput("Size")` and the connected
+  outputs all answered instantly; `GetInput("CharacterSpacing")` (fed by
+  `Calculation1` <- `AnimCurves`) never returned and the UI died with it.
+  Static inputs and BezierSpline-driven inputs evaluate fine. Every read path
+  (`GET .../tools/{tool}`, `.../inputs`, `.../keyframes`, `DELETE keyframes`)
+  now checks `GetConnectedOutput().GetTool().ID` first and reports
+  `{"driven_by": "Calculation1", "driver": "Calculation"}` instead of a value.
+  Never read a template's driven inputs through `/exec` either.
+- **`_loaded` leaves Resolve on the Fusion page with the playhead on the
+  item** and reports `loaded: {page_before, playhead_before, ...}` instead of
+  switching back; the step-by-step bisect that never froze did no restore, and
+  a page switch while Fusion is still evaluating a pasted comp is one more
+  thing to go wrong. Switch back with `POST /system/page` when done.
+- **Shared temp caches poison live runs.** The template extractor wrote bundle
+  members to `%TEMP%/dollygrip/fusion_templates/<kind>/<member>`; a pytest run
+  put its 117-byte fake JSON at the same path, `bmd.readfile` returned nil and
+  `comp:Paste(nil)` answered `true` while pasting nothing - an afternoon of
+  "paste lands nothing" that looked like a Fusion bug. The cache is now keyed
+  by bundle path + size + mtime, tests point `DOLLYGRIP_TEMPLATE_CACHE` at a
+  per-test folder, and the Lua raises when readfile returns nil.
+- **Comp markers are lowercase and time-keyed.** `comp.GetMarkers()` ->
+  `{time: {time, name, note, duration, customData}}`; `comp.SetMarker(frame,
+  table)` adds or replaces, but the TABLE's `time` decides where the marker
+  lands (a table with `time = 30` passed as `SetMarker(12, ...)` moves the
+  marker to 30); `SetMarker(frame, None)` deletes; there is no colour. Both
+  calls return None, so success is checked by reading the markers back.
+- **`comp.GetNextKeyTime(t)` answers an out-of-range x.9999 value when there
+  is no further key** (119.9999 on a 120-frame comp; 1000.9999 when asked from
+  frame 100 on a 9-frame comp), never nil. Anything at or past
+  `COMPN_RenderEnd` / `COMPN_GlobalEnd` is "no key" (`GET .../key-times`
+  does this; a key sitting exactly on the last frame is therefore reported as
+  not found).
+- **Undoing after a paste undoes the paste** ("Paste: Multiple Tools" is one
+  undo step); `SetInput` calls made through scripting do not appear on the
+  undo stack. `comp.GetUndoStack()` / `GetRedoStack()` are lists of step names.
+- **`fusion.GetRegSummary()`** is a dict of 1279 entries keyed by index with
+  `REGS_ID`, `REGS_Name`, `REGI_ClassType` - no category. `GetRegList(CT_Modifier)`
+  entries have no `GetID` method from scripting.

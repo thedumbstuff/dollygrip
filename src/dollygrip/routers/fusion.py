@@ -64,6 +64,32 @@ def _set_inputs(tool, inputs: dict, frame: Optional[int] = None) -> dict:
     return results
 
 
+SAFE_DRIVERS = ("BezierSpline", "PolyPath")  # GetInput on these evaluates fine
+
+
+def input_driver(inp):
+    """(driver_name, driver_id) when the input is fed by another tool or a
+    modifier, else (None, None)."""
+    out = safe(inp.GetConnectedOutput)
+    if out is None:
+        return None, None
+    src = safe(out.GetTool)
+    if src is None:
+        return None, None
+    return safe(lambda: src.Name), safe(lambda: src.ID)
+
+
+def input_value(tool, inp, key):
+    """Read an input's value WITHOUT freezing Resolve: `GetInput` on an input
+    driven by a Calculation / AnimCurves (LUTLookup) / Expression modifier
+    deadlocked Resolve hard (2026-09-24, four times). Splines and static inputs
+    evaluate fine; anything else is reported as `{"driven_by": ..., "driver": ...}`."""
+    name, driver = input_driver(inp)
+    if driver is None or driver in SAFE_DRIVERS:
+        return jsonable(safe(tool.GetInput, key))
+    return {"driven_by": name, "driver": driver}
+
+
 def _tool_detail(tool) -> dict:
     out = tool_summary(tool)
     inputs = {}
@@ -72,7 +98,7 @@ def _tool_detail(tool) -> dict:
             attrs = safe(inp.GetAttrs, default={}) or {}
             key = attrs.get("INPS_ID") or attrs.get("INPS_Name")
             if key:
-                inputs[key] = jsonable(safe(tool.GetInput, key))
+                inputs[key] = input_value(tool, inp, key)
     except Exception:
         pass
     out["inputs"] = inputs
@@ -198,7 +224,11 @@ def list_tool_inputs(item_id: str, comp: str, tool: str, page: Optional[str] = Q
             continue
         if page and str(row.get("page", "")).lower() != page.lower():
             continue
-        row["value"] = jsonable(safe(t.GetInput, key))
+        value = input_value(t, inp, key)
+        if isinstance(value, dict) and "driven_by" in value:
+            row["driven_by"], row["driver"] = value["driven_by"], value["driver"]
+        else:
+            row["value"] = value
         expr = safe(inp.GetExpression)
         if expr:
             row["expression"] = expr

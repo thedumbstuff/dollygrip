@@ -87,12 +87,15 @@ def lua(comp, body: str, wait: float = 20.0) -> Any:
     return out
 
 
-def _loaded(bridge: ResolveBridge, item, comp, settle: float = 6.0, keep_page: bool = False):
+def _loaded(bridge: ResolveBridge, item, comp, settle: float = 6.0) -> Optional[Dict[str, Any]]:
     """Paste / FlowView only work once the comp has been opened on the Fusion
-    page. Load it (once), wait until Fusion reports a frame for it and answers
-    a Lua round trip, then give the user their page and playhead back (or, with
-    keep_page, return a callable that does so - pastes want the page open).
-    Returns None when nothing had to be loaded."""
+    page. Load it (once): park the playhead on the item, load the comp, open
+    the Fusion page, wait until Fusion reports a frame for it and answers a
+    Lua round trip. The page and playhead are deliberately LEFT there:
+    switching back to Edit and moving the playhead right after a paste froze
+    Resolve hard (GOTCHAS, 2026-09-24); the response reports what moved so the
+    caller can switch pages later with POST /system/page. Returns None when
+    nothing had to be loaded."""
     if safe(lambda: comp.CurrentFrame) is not None:
         return None
     names = item.GetFusionCompNameList() or []
@@ -113,31 +116,23 @@ def _loaded(bridge: ResolveBridge, item, comp, settle: float = 6.0, keep_page: b
     # Resolve has frozen hard on Fusion writes while its background renders
     # ran (GOTCHAS); opening a comp is the moment to switch them off.
     safe(resolve.DisableBackgroundTasksForCurrentResolveSession)
+    time.sleep(SETTLE_SECONDS * 0.5)
     if name:
         safe(item.LoadFusionCompByName, name)
+    time.sleep(SETTLE_SECONDS * 0.5)
     safe(resolve.OpenPage, "fusion")
+    time.sleep(SETTLE_SECONDS)  # do not hammer the comp while the page is loading (Resolve froze twice)
     deadline = time.monotonic() + settle
     while safe(lambda: comp.CurrentFrame) is None and time.monotonic() < deadline:
-        time.sleep(0.2)
-
-    def restore():
-        if page and page != "fusion":
-            safe(resolve.OpenPage, page)
-        if playhead:
-            safe(tl.SetCurrentTimecode, playhead)
-
+        time.sleep(0.5)
     if safe(lambda: comp.CurrentFrame) is None:
-        restore()
         raise Rejected("Could not open the composition on the Fusion page (needed for paste / node layout); open it once in the UI and retry")
     time.sleep(SETTLE_SECONDS)  # the frame appears before the comp accepts pastes
     try:
         lua(comp, 'comp:SetData("dg_out", 1)', wait=5.0)
     except Rejected:
         pass
-    if keep_page:
-        return restore
-    restore()
-    return None
+    return {"page_before": page, "page_now": "fusion", "playhead_before": playhead, "playhead_now": safe(tl.GetCurrentTimecode)}
 
 
 def _names(comp) -> List[str]:
@@ -318,15 +313,11 @@ def _settings_path(body: PasteSettings) -> str:
     raise Rejected("Give `template` (kind/name from GET /fusion/templates), `path` (a .setting / .comp / macro file) or `settings_text`")
 
 
-def _paste_file(bridge: ResolveBridge, item, comp, path: str) -> List:
-    restore = _loaded(bridge, item, comp, keep_page=True)
-    try:
-        before = set(_names(comp))
-        lua(comp, f"comp:Paste(bmd.readfile([[{_lua_path(path)}]]))")
-        return [t for t in _tools(comp) if tool_summary(t)["name"] not in before]
-    finally:
-        if restore:
-            restore()
+def _paste_file(bridge: ResolveBridge, item, comp, path: str):
+    moved = _loaded(bridge, item, comp)
+    before = set(_names(comp))
+    lua(comp, f'local t = bmd.readfile([[{_lua_path(path)}]]) if not t then error("bmd.readfile could not parse the settings file") end comp:Paste(t)')
+    return [t for t in _tools(comp) if tool_summary(t)["name"] not in before], moved
 
 
 @router.post("/items/{item_id}/comps/{comp}/paste")
@@ -339,7 +330,7 @@ def paste_settings(item_id: str, comp: str, body: PasteSettings, bridge: Resolve
     item = bridge.item(item_id)
     c = bridge.fusion_comp(item, comp)
     path = _settings_path(body)
-    new = _paste_file(bridge, item, c, path)
+    new, moved = _paste_file(bridge, item, c, path)
     if not new:
         raise Rejected(f"Paste of {path!r} added no tools (is it a Fusion .setting / macro file?)")
     applied = {}
@@ -349,7 +340,7 @@ def paste_settings(item_id: str, comp: str, body: PasteSettings, bridge: Resolve
             applied[name] = "tool not found after paste"
             continue
         applied[name] = _set_inputs(target, inputs)
-    return {"ok": True, "source": path, "tools": [_tool_detail(t) if body.detail else tool_summary(t) for t in new], "overrides": applied}
+    return {"ok": True, "source": path, "tools": [_tool_detail(t) if body.detail else tool_summary(t) for t in new], "overrides": applied, "loaded": moved}
 
 
 # -- tool duplication and presets ---------------------------------------------------
@@ -363,14 +354,10 @@ def duplicate_tool(item_id: str, comp: str, tool: str, body: DuplicateTool, brid
     c = bridge.fusion_comp(item, comp)
     t = _tool(c, tool)
     src_name = tool_summary(t)["name"]
-    restore = _loaded(bridge, item, c, keep_page=True)
-    try:
-        before = set(_names(c))
-        lua(c, f'comp:Paste(comp:FindTool("{src_name}"):SaveSettings())')
-        new = [x for x in _tools(c) if tool_summary(x)["name"] not in before]
-    finally:
-        if restore:
-            restore()
+    moved = _loaded(bridge, item, c)
+    before = set(_names(c))
+    lua(c, f'comp:Paste(comp:FindTool("{src_name}"):SaveSettings())')
+    new = [x for x in _tools(c) if tool_summary(x)["name"] not in before]
     if not new:
         raise Rejected("Paste produced no new tool")
     dup = next((x for x in new if tool_summary(x)["id"] == tool_summary(t)["id"]), new[0])
@@ -378,7 +365,7 @@ def duplicate_tool(item_id: str, comp: str, tool: str, body: DuplicateTool, brid
         safe(dup.SetAttrs, {"TOOLS_Name": body.name})
     if body.inputs:
         _set_inputs(dup, body.inputs)
-    return {"ok": True, "tool": _tool_detail(dup), "also_created": [tool_summary(x)["name"] for x in new if x is not dup]}
+    return {"ok": True, "tool": _tool_detail(dup), "also_created": [tool_summary(x)["name"] for x in new if x is not dup], "loaded": moved}
 
 
 @router.post("/items/{item_id}/comps/{comp}/tools/{tool}/settings/save")
@@ -418,7 +405,7 @@ def get_tool_keyframes(item_id: str, comp: str, tool: str, input: str = Query(de
         inp, spline = _spline_of(t, input)
     except Exception as e:
         raise NotFound(f"No input {input!r} on {tool}: {e}") from e
-    if spline is None:
+    if spline is None:  # static: GetInput is safe (never call it on a Calculation/AnimCurves-driven input)
         return {"input": input, "animated": False, "modifier": None, "value": jsonable(safe(t.GetInput, input)), "keyframes": {}, "expression": safe(inp.GetExpression)}
     modifier = safe(lambda: spline.ID)
     # Only splines hold keys; Shake & co answer GetKeyFrames with their valid range (+-1e9), not keys.
@@ -448,9 +435,17 @@ def clear_tool_keyframes(
     t = _tool(_comp(bridge, item_id, comp), tool)
     try:
         inp, spline = _spline_of(t, input)
-        current = value if value is not None else safe(t.GetInput, input)
+        driver = safe(lambda: spline.ID) if spline is not None else None
+        if value is not None:
+            current = value
+        elif driver in (None, "BezierSpline", "PolyPath"):
+            current = safe(t.GetInput, input)  # safe: static or spline (GetInput on other modifiers freezes Resolve)
+        else:
+            current = None
         if spline is not None:
             inp.ConnectTo(None)
+        if current is None and value is None and driver not in (None, "BezierSpline", "PolyPath"):
+            current = safe(t.GetInput, input)  # now static, safe to read
         if current is not None:
             t.SetInput(input, _fusion_value(current))
     except Exception as e:

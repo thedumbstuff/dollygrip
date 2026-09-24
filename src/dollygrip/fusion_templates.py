@@ -15,6 +15,7 @@ stem is exactly the name `InsertFusionTitleIntoTimeline` /
 
 from __future__ import annotations
 
+import hashlib
 import os
 import sys
 import tempfile
@@ -124,14 +125,27 @@ def find_template(ref: str, kind: Optional[str] = None, env: Optional[dict] = No
     return None
 
 
+def cache_root() -> Path:
+    """Where bundle members are extracted: `DOLLYGRIP_TEMPLATE_CACHE` or
+    <temp>/dollygrip/fusion_templates."""
+    override = os.environ.get("DOLLYGRIP_TEMPLATE_CACHE")
+    return Path(override) if override else Path(tempfile.gettempdir()) / "dollygrip" / "fusion_templates"
+
+
 def extract(template: Dict, cache_dir: Optional[Path] = None) -> str:
     """A real filesystem path for the template's .setting (bundle members are
-    copied out into a cache folder under the temp dir)."""
+    copied out into a cache folder keyed by the bundle's path, size and
+    mtime, so two bundles with the same member name never collide)."""
     if not template.get("bundle"):
         return template["path"]
-    cache_dir = cache_dir or Path(tempfile.gettempdir()) / "dollygrip" / "fusion_templates"
-    target = cache_dir / template["kind"] / template["path"].replace("/", os.sep)
-    if not target.exists():
+    bundle = Path(template["bundle"])
+    try:
+        stat = bundle.stat()
+        key = hashlib.sha1(f"{bundle}|{stat.st_size}|{int(stat.st_mtime)}".encode("utf-8")).hexdigest()[:12]
+    except OSError:
+        key = hashlib.sha1(str(bundle).encode("utf-8")).hexdigest()[:12]
+    target = (cache_dir or cache_root()) / key / template["path"].replace("/", os.sep)
+    if not target.exists() or target.stat().st_size == 0:
         target.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(template["bundle"]) as z:
             target.write_bytes(z.read(template["path"]))

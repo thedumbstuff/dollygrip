@@ -16,11 +16,11 @@ def _fake_comp(timeline):
 def test_comp_markers(client, timeline):
     comp = f"{F}/items/{_title(client)}/comps/1"
     assert client.get(f"{comp}/markers").json() == {"markers": []}
-    r = client.put(f"{comp}/markers", json={"frame": 24, "name": "Hit", "note": "beat", "color": "Red"})
-    assert r.status_code == 200 and r.json()["markers"] == [{"frame": 24, "name": "Hit", "note": "beat", "color": "Red"}]
+    r = client.put(f"{comp}/markers", json={"frame": 24, "name": "Hit", "note": "beat", "custom_data": "cue-1"})
+    assert r.status_code == 200 and r.json()["markers"] == [{"frame": 24, "name": "Hit", "note": "beat", "duration": 0.0, "custom_data": "cue-1"}]
     client.put(f"{comp}/markers", json={"frame": 5, "name": "Start"})
     assert [m["frame"] for m in client.get(f"{comp}/markers").json()["markers"]] == [5, 24]
-    assert client.delete(f"{comp}/markers", params={"frame": 24}).json()["markers"] == [{"frame": 5, "name": "Start", "note": "", "color": ""}]
+    assert client.delete(f"{comp}/markers", params={"frame": 24}).json()["markers"] == [{"frame": 5, "name": "Start", "note": "", "duration": 0.0, "custom_data": ""}]
     assert client.delete(f"{comp}/markers", params={"frame": 99}).status_code == 404
     assert client.put(f"{F}/items/{_title(client)}/comps/ghost/markers", json={"frame": 1, "name": "x"}).status_code == 404
 

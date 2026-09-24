@@ -77,8 +77,11 @@ def item_ids(client, track_type=None):
 
 
 @pytest.fixture(autouse=True)
-def _no_fusion_settle(monkeypatch):
-    """The fake comp is ready instantly; skip the real-Resolve settle sleep."""
+def _no_fusion_settle(monkeypatch, tmp_path):
+    """The fake comp is ready instantly; skip the real-Resolve settle sleep.
+    Template extraction goes to a per-test folder, never the machine's real
+    cache (a test once poisoned it with fake JSON and live pastes went silent)."""
     from dollygrip.routers import fusion_more
 
     monkeypatch.setattr(fusion_more, "SETTLE_SECONDS", 0)
+    monkeypatch.setenv("DOLLYGRIP_TEMPLATE_CACHE", str(tmp_path / "template-cache"))

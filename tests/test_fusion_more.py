@@ -129,7 +129,7 @@ def test_paste_template_with_overrides(client, timeline, tmp_path, monkeypatch):
     assert client.post(f"{comp}/paste", json={}).status_code == 422
     # a file that is not a settings table -> Fusion's own error surfaces as 422
     bad = client.post(f"{comp}/paste", json={"template": "titles/Clean Bar"})
-    assert bad.status_code == 422 and "Paste" in bad.json()["detail"]
+    assert bad.status_code == 422 and "readfile" in bad.json()["detail"]
 
 
 def test_paste_path_and_text(client, tmp_path):
@@ -188,6 +188,12 @@ def test_modifiers(client, timeline):
     assert fake_comp.tools["Template"].splines["Center"].kind == "Shake"
     kf = client.get(f"{comp}/tools/Template/keyframes", params={"input": "Center"}).json()
     assert kf["animated"] is False and kf["modifier"] == "Shake"
+    # a modifier-driven input is never evaluated with GetInput (deadlocks Resolve) - reported as driven_by
+    detail = client.get(f"{comp}/tools/Template").json()["inputs"]["Center"]
+    assert detail == {"driven_by": "Shake1", "driver": "Shake"}
+    rows = client.get(f"{comp}/tools/Template/inputs").json()["inputs"]
+    center = next(r for r in rows if r.get("id") == "Center")
+    assert center["driven_by"] == "Shake1" and "value" not in center
     assert client.post(f"{comp}/tools/Template/modifier", json={"input": "Center", "modifier": "Perturb"}).status_code == 422  # no constructor on Resolve 21
     fake_comp.Shake = None
     assert client.post(f"{comp}/tools/Template/modifier", json={"input": "Size", "modifier": "Shake"}).status_code == 422

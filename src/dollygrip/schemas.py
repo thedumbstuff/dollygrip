@@ -674,7 +674,8 @@ class CompMarker(BaseModel):
     frame: int = Field(description="Comp frame the marker sits on")
     name: str
     note: Optional[str] = None
-    color: Optional[str] = Field(default=None, description="Marker colour name, e.g. 'Red', 'Blue'")
+    duration: float = Field(default=0.0, description="Marker length in frames (0 = a point marker)")
+    custom_data: Optional[str] = Field(default=None, description="Free-form tag stored on the marker (customData)")
 
 
 class SetActiveTool(BaseModel):

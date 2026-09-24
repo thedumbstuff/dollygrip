@@ -81,7 +81,7 @@ what else to override (font, colour, timing). Fusion-page presets
 way and make good overlays merged over a card. Call `fusion_fonts` (GET
 `/fusion/fonts`) before choosing a typeface and check it carries your
 glyphs. The first paste into a comp takes a few seconds: the gateway has to
-open the comp on the Fusion page once (it restores your page and playhead).
+open the comp on the Fusion page once (it leaves you on the Fusion page with the playhead on that item; switch back with `set_page` when you are done pasting, not between pastes).
 
 **Music bed and loudness** (audio levels are not scriptable; prepare the
 stems on disk, then import):
