@@ -134,9 +134,10 @@ def export_comp(item_id: str, comp: str, body: CompExport, bridge: ResolveBridge
 
 
 @router.get("/items/{item_id}/comps/{comp}/tools")
-def list_tools(item_id: str, comp: str, bridge: ResolveBridge = Depends(resolve_session)):
+def list_tools(item_id: str, comp: str, type: Optional[str] = Query(default=None, description="Only tools of this RegID, e.g. TextPlus, Merge, Background"), bridge: ResolveBridge = Depends(resolve_session)):
     c = _comp(bridge, item_id, comp)
-    return {"attrs": jsonable(safe(c.GetAttrs, default={})), "tools": [tool_summary(t) for t in _tools(c)]}
+    tools = [t for t in _tools(c) if type is None or tool_summary(t)["id"] == type]
+    return {"attrs": jsonable(safe(c.GetAttrs, default={})), "tools": [tool_summary(t) for t in tools]}
 
 
 @router.post("/items/{item_id}/comps/{comp}/tools")
@@ -227,11 +228,29 @@ def patch_tool(item_id: str, comp: str, tool: str, body: PatchTool, bridge: Reso
         attrs["TOOLS_Name"] = body.name
     if body.pass_through is not None:
         attrs["TOOLB_PassThrough"] = body.pass_through
+    if body.locked is not None:
+        attrs["TOOLB_Locked"] = body.locked
     if attrs:
         try:
             t.SetAttrs(attrs)
         except Exception as e:
             raise Rejected(f"SetAttrs failed: {e}") from e
+    if body.tile_color is not None:
+        try:
+            if body.tile_color:
+                r, g, b = body.tile_color[:3]
+                t.TileColor = {"R": r, "G": g, "B": b}
+            else:
+                t.TileColor = None
+        except Exception as e:
+            raise Rejected(f"TileColor failed: {e}") from e
+    if body.position is not None:
+        c = _comp(bridge, item_id, comp)
+        try:
+            flow = c.CurrentFrame.FlowView
+            flow.SetPos(t, float(body.position[0]), float(body.position[1]))
+        except Exception as e:
+            raise Rejected(f"FlowView.SetPos failed: {e}") from e
     return {"ok": True, "tool": tool_summary(t)}
 
 
@@ -347,6 +366,17 @@ def text_plus(item_id: str, body: TextPlus, comp: Optional[str] = Query(default=
             inputs["Alpha1"] = body.color[3]
     if body.center:
         inputs["Center"] = body.center
+    if body.shadow is not None:
+        inputs["Enabled3"] = 1 if body.shadow else 0
+    if body.outline:
+        r, g, b = body.outline[:3]
+        inputs.update({"Enabled2": 1, "Red2": r, "Green2": g, "Blue2": b})
+        if body.outline_thickness is not None:
+            inputs["Thickness2"] = body.outline_thickness
+    if body.tracking is not None:
+        inputs["CharacterSpacing"] = body.tracking
+    if body.line_spacing is not None:
+        inputs["LineSpacing"] = body.line_spacing
     return set_text_plus(bridge, bridge.item(item_id), body.text, comp, body.tool, **inputs)
 
 

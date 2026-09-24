@@ -579,6 +579,47 @@ class FakeSpline:
     def GetTool(self):
         return self
 
+    def GetKeyFrames(self):
+        return {float(k): (v if isinstance(v, dict) else {1: v}) for k, v in self.tool.keyframes.get(self.name, {}).items()}
+
+    @property
+    def ID(self):
+        return "BezierSpline"
+
+    @property
+    def Name(self):
+        return f"{self.tool.Name}{self.name}"
+
+
+class FakeModifier(FakeSpline):
+    """Path / Shake / Perturb ... modifiers: behave like a spline attachment but keep their own inputs."""
+
+    def __init__(self, kind):
+        super().__init__()
+        self.kind = kind
+        self.inputs = {}
+
+    @property
+    def ID(self):
+        return self.kind
+
+    @property
+    def Name(self):
+        return f"{self.kind}1"
+
+    def GetAttrs(self):
+        return {"TOOLS_Name": self.Name, "TOOLS_RegID": self.kind, "TOOLB_PassThrough": False, "TOOLB_Selected": False}
+
+    def SetInput(self, name, value, time=None):
+        self.inputs[name] = value
+        return True
+
+    def GetInput(self, name, time=None):
+        return self.inputs.get(name)
+
+    def GetInputList(self):
+        return {i + 1: FakeInput(self, n) for i, n in enumerate(self.inputs)}
+
 
 class FakeInput:
     """A Fusion Input proxy: supports `inp[frame] = value` keyframing."""
@@ -588,6 +629,14 @@ class FakeInput:
 
     def GetConnectedOutput(self):
         return self.tool.splines.get(self.name)
+
+    def ConnectTo(self, output):
+        if output is None:
+            self.tool.splines.pop(self.name, None)
+            self.tool.keyframes.pop(self.name, None)
+        else:
+            self.tool.connections[self.name] = getattr(output, "Name", str(output))
+        return True
 
     def __setitem__(self, frame, value):
         self.tool.keyframes.setdefault(self.name, {})[frame] = value
@@ -623,10 +672,12 @@ class FakeTool:
         self.expressions = {}
         self.splines = {}
         self.pass_through = False
+        self.locked = False
+        self.TileColor = None
         self.deleted = False
 
     def GetAttrs(self):
-        return {"TOOLS_Name": self.Name, "TOOLS_RegID": self.reg_id, "TOOLB_PassThrough": self.pass_through, "TOOLB_Selected": False}
+        return {"TOOLS_Name": self.Name, "TOOLS_RegID": self.reg_id, "TOOLB_PassThrough": self.pass_through, "TOOLB_Selected": False, "TOOLB_Locked": self.locked}
 
     def SetAttrs(self, attrs):
         if "TOOLS_Name" in attrs:
@@ -634,6 +685,23 @@ class FakeTool:
             self.Name = attrs["TOOLS_Name"]
         if "TOOLB_PassThrough" in attrs:
             self.pass_through = bool(attrs["TOOLB_PassThrough"])
+        if "TOOLB_Locked" in attrs:
+            self.locked = bool(attrs["TOOLB_Locked"])
+        return True
+
+    def SaveSettings(self, path=None):
+        table = {"Tools": {self.Name: {"__ctor": self.reg_id, "Inputs": dict(self.inputs), "keyframes": {k: dict(v) for k, v in self.keyframes.items()}}}}
+        if path:
+            self.comp.saved_settings[path] = table
+            return True
+        return table
+
+    def LoadSettings(self, path):
+        table = self.comp.saved_settings.get(path)
+        if not table:
+            return False
+        for spec in table["Tools"].values():
+            self.inputs.update(spec.get("Inputs", {}))
         return True
 
     def GetInput(self, name, time=None):
@@ -642,7 +710,7 @@ class FakeTool:
         return self.inputs.get(name)
 
     def __setattr__(self, name, value):
-        if isinstance(value, FakeSpline):  # `tool.Input = comp.BezierSpline()` attaches the modifier
+        if isinstance(value, FakeSpline):  # `tool.Input = comp.BezierSpline()` / comp.Shake() attaches the modifier
             value.tool, value.name = self, name
             self.splines[name] = value
             return
@@ -666,9 +734,27 @@ class FakeTool:
         self.comp.tools.pop(self.Name, None)
 
     def __getattr__(self, name):
-        if name.startswith("_") or name in ("comp", "reg_id", "Name", "ID", "inputs", "keyframes", "connections", "expressions", "splines", "pass_through", "deleted"):
+        if name.startswith("_") or name in ("comp", "reg_id", "Name", "ID", "inputs", "keyframes", "connections", "expressions", "splines", "pass_through", "locked", "TileColor", "deleted"):
             raise AttributeError(name)
         return FakeInput(self, name)
+
+
+class FakeFlowView:
+    def __init__(self):
+        self.pos = {}
+
+    def SetPos(self, tool, x, y):
+        self.pos[tool.Name] = (x, y)
+        return True
+
+    def GetPosTable(self, tool):
+        p = self.pos.get(tool.Name)
+        return {1: p[0], 2: p[1]} if p else None
+
+
+class FakeFrame:
+    def __init__(self):
+        self.FlowView = FakeFlowView()
 
 
 class FakeComp:
@@ -677,6 +763,9 @@ class FakeComp:
         self.tools = {}
         self.locked = False
         self.saved_to = None
+        self.saved_settings = {}
+        self.CurrentFrame = FakeFrame()
+        self.undo = []
         self.attrs = {"COMPN_RenderStart": 0, "COMPN_RenderEnd": 149, "COMPN_CurrentTime": 0, "COMPS_Name": name}
         self.AddTool("MediaIn")
         self.AddTool("MediaOut")
@@ -704,10 +793,39 @@ class FakeComp:
         self.locked = False
 
     def StartUndo(self, name):
+        self.undo.append(("start", name))
         return True
 
     def EndUndo(self, keep=True):
+        self.undo.append(("end", keep))
         return True
+
+    def Paste(self, table):
+        """Settings table -> new tools (names get a numeric suffix like Fusion)."""
+        if not isinstance(table, dict) or "Tools" not in table:
+            return False
+        for name, spec in table["Tools"].items():
+            reg = spec.get("__ctor", "Background")
+            tool = self.AddTool(reg)
+            tool.inputs.update(spec.get("Inputs", {}))
+            for inp, keys in spec.get("keyframes", {}).items():
+                tool.keyframes[inp] = dict(keys)
+        return True
+
+    def Path(self):
+        return FakeModifier("Path")
+
+    def XYPath(self):
+        return FakeModifier("XYPath")
+
+    def Shake(self):
+        return FakeModifier("Shake")
+
+    def Perturb(self):
+        return FakeModifier("Perturb")
+
+    def Follower(self):
+        return FakeModifier("Follower")
 
     def Save(self, path):
         self.saved_to = path
@@ -1730,9 +1848,15 @@ class FakeProjectManager:
         return True
 
 
+class FakeFontManager:
+    def GetFontList(self):
+        return {"Arial": {}, "Comic Sans MS": {}, "Segoe UI Symbol": {}, "Impact": {}}
+
+
 class FakeFusion:
     def __init__(self):
         self.current_comp = FakeComp("Composition 1", with_text=True)
+        self.FontManager = FakeFontManager()
 
     def GetCurrentComp(self):
         return self.current_comp

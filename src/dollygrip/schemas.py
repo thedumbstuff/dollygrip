@@ -607,6 +607,49 @@ class ToolExpression(BaseModel):
 class PatchTool(BaseModel):
     name: Optional[str] = None
     pass_through: Optional[bool] = Field(default=None, description="Bypass the tool (TOOLB_PassThrough)")
+    locked: Optional[bool] = Field(default=None, description="Lock the tool (TOOLB_Locked)")
+    position: Optional[List[float]] = Field(default=None, description="Node position in the flow view, [x, y]")
+    tile_color: Optional[List[float]] = Field(default=None, description="Node tile colour [r, g, b] in 0..1; [] clears")
+
+
+class CompAttrs(BaseModel):
+    current_time: Optional[int] = None
+    render_start: Optional[int] = None
+    render_end: Optional[int] = None
+    global_start: Optional[int] = None
+    global_end: Optional[int] = None
+    hiq: Optional[bool] = None
+    motion_blur: Optional[bool] = None
+    proxy: Optional[bool] = None
+    raw: Optional[Dict[str, Any]] = Field(default=None, description="Any other COMP* attribute, passed to SetAttrs as-is")
+
+
+class CompUndo(BaseModel):
+    action: Literal["start", "end"]
+    name: Optional[str] = Field(default=None, description="Undo label (start)")
+    keep: bool = Field(default=True, description="end: keep the changes (false = revert the group)")
+
+
+class PasteSettings(BaseModel):
+    path: Optional[str] = Field(default=None, description=".setting / .comp / macro file on the Resolve machine")
+    settings: Optional[Dict[str, Any]] = Field(default=None, description="A Fusion settings table instead of a file")
+    inputs: Optional[Dict[str, Dict[str, Any]]] = Field(default=None, description="Per-tool input overrides applied after the paste: {tool_name: {input: value}}")
+    detail: bool = Field(default=False, description="Return full input listings for the pasted tools")
+
+
+class DuplicateTool(BaseModel):
+    name: Optional[str] = None
+    inputs: Dict[str, Any] = Field(default_factory=dict, description="Inputs to change on the copy")
+
+
+class ToolSettingsPath(BaseModel):
+    path: str
+
+
+class ToolModifier(BaseModel):
+    input: str
+    modifier: Literal["BezierSpline", "Path", "XYPath", "Shake", "Perturb", "Follower", "Calculation", "Offset"] = "Shake"
+    inputs: Dict[str, Any] = Field(default_factory=dict, description="Inputs to set on the modifier itself")
 
 
 class TextPlus(BaseModel):
@@ -617,6 +660,11 @@ class TextPlus(BaseModel):
     size: Optional[float] = Field(default=None, description="Fusion size units (0.08 is the default title size)")
     color: Optional[List[float]] = Field(default=None, description="[r, g, b] or [r, g, b, a] in 0..1")
     center: Optional[List[float]] = Field(default=None, description="[x, y] in 0..1, (0.5, 0.5) is centred")
+    shadow: Optional[bool] = Field(default=None, description="Enable the drop shadow shading element")
+    outline: Optional[List[float]] = Field(default=None, description="Outline colour [r, g, b] (enables the outline element); use with outline_thickness")
+    outline_thickness: Optional[float] = Field(default=None, description="Outline thickness, Fusion units (e.g. 0.02)")
+    tracking: Optional[float] = Field(default=None, description="Character spacing (1.0 = normal)")
+    line_spacing: Optional[float] = Field(default=None, description="Line spacing (1.0 = normal)")
     extra_inputs: Dict[str, Any] = Field(default_factory=dict)
 
 

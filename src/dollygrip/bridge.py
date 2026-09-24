@@ -40,9 +40,10 @@ class Rejected(RuntimeError):
 
 
 class ResolveBridge:
-    def __init__(self, connector: Optional[Callable] = None):
+    def __init__(self, connector: Optional[Callable] = None, settings_reader: Optional[Callable] = None):
         # `connector` is injectable so tests can hand in a fake Resolve.
         self._connector = connector or discovery.connect_to_resolve
+        self._settings_reader = settings_reader
         self._resolve = None
         # Re-entrant: the render "wait" endpoint re-acquires between polls.
         self.lock = threading.RLock()
@@ -93,6 +94,20 @@ class ResolveBridge:
         if ms is None:
             raise ResolveUnavailable("GetMediaStorage() returned nothing")
         return ms
+
+    def settings_reader(self) -> Optional[Callable]:
+        """fusionscript's readfile(path) -> settings table (for .setting/.comp
+        files), or None when the module is not loaded in this process."""
+        if self._settings_reader is not None:
+            return self._settings_reader
+        import sys
+
+        for mod_name in ("fusionscript", "DaVinciResolveScript"):
+            mod = sys.modules.get(mod_name)
+            reader = getattr(mod, "readfile", None) or getattr(getattr(mod, "bmd", None), "readfile", None)
+            if reader:
+                return reader
+        return None
 
     def fusion(self):
         fu = self.ensure().Fusion()
