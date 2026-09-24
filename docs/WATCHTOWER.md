@@ -42,7 +42,7 @@ Operation counts are from the live OpenAPI document (`GET /openapi.json`).
 | **Tools** | 1 | timecode <-> frames, drop-frame aware | yes |
 | **Exec** | 1 | raw Python against the live scripting objects (`--allow-exec` only) | yes |
 
-Cross-cutting: object addressing (items by unique id, clips by id or name, `current` for playhead/timeline/album), reconnect on Resolve restart, crash-proof subprocess import probe, `--token` auth, localhost-only default, `--media-dir`, MCP profiles `editor | colorist | motion | delivery | core | all`, MCP resources `openapi.json | operations | craft | gotchas | readme | watchtower`. Human pages served by the gateway: `/` (live status, links), `/watchtower`, `/pages/craft|gotchas|roadmap|readme` (Markdown rendered, open even with `--token`).
+Cross-cutting: object addressing (items by unique id, clips by id or name, `current` for playhead/timeline/album), reconnect on Resolve restart, crash-proof subprocess import probe, `--token` auth, localhost-only default, `--media-dir`, MCP profiles `editor | colorist | motion | delivery | core | all`, MCP resources `openapi.json | operations | craft | gotchas | readme | watchtower`. Provider keys and paths can live in a gitignored `.env` (loaded by serve/mcp/run; `.env.example` committed). Human pages served by the gateway: `/` (live status, links), `/watchtower`, `/pages/craft|gotchas|roadmap|readme` (Markdown rendered, open even with `--token`).
 
 ## 3. Pending items
 

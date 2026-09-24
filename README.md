@@ -113,8 +113,9 @@ Tools are not taste. [`docs/VIDEO_CRAFT.md`](docs/VIDEO_CRAFT.md) is the product
 Give it the script's keywords (in order), a voiceover (or a duration) and an aspect, and it fills the timeline with stock b-roll:
 
 ```bash
-export PEXELS_API_KEY=...            # free at pexels.com/api (also PIXABAY_API_KEY, COVERR_API_KEY)
-dollygrip serve --media-dir D:/stock # where downloads land (default ~/DollyGrip/stock)
+cp .env.example .env                 # then fill in PEXELS_API_KEY / PIXABAY_API_KEY / COVERR_API_KEY
+                                     # (.env is gitignored; shell variables win; free keys at pexels.com/api and pixabay.com/api/docs)
+dollygrip serve --media-dir D:/stock # loads .env from the current dir or the repo root; --env-file picks another
 
 curl -X POST localhost:4747/api/v1/stock/b-roll -H 'content-type: application/json' -d '{
   "terms": ["city at night", "student studying", "phone camera close-up"],

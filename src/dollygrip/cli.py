@@ -12,6 +12,7 @@ def main(argv=None) -> int:
         description="A local REST gateway for the DaVinci Resolve scripting API.",
     )
     parser.add_argument("--version", action="version", version=f"dollygrip {__version__}")
+    parser.add_argument("--env-file", default=None, help="KEY=VALUE file with provider keys etc. (default: DOLLYGRIP_ENV_FILE, ./.env, then <repo>/.env; existing env vars win)")
     sub = parser.add_subparsers(dest="command")
 
     serve = sub.add_parser("serve", help="Run the gateway (Resolve Studio must be running)")
@@ -39,6 +40,14 @@ def main(argv=None) -> int:
     runp.add_argument("--allow-exec", action="store_true", help="Allow exec_code steps")
 
     args = parser.parse_args(argv)
+
+    from . import envfile
+
+    used = envfile.load(args.env_file)
+    if used and args.command != "mcp":
+        print(f"loaded environment from {used}")
+    elif used:
+        print(f"loaded environment from {used}", file=sys.stderr)
 
     if args.command == "serve":
         return _serve(args)

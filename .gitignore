@@ -11,3 +11,6 @@ htmlcov/
 .DS_Store
 .idea/
 /*.png
+.env
+.env.*
+!.env.example
