@@ -19,6 +19,8 @@ curl http://127.0.0.1:4747/api/v1/health
 # {"gateway":"ok","resolve":"connected","product":"DaVinci Resolve Studio","version":"21.0.4.5"}
 ```
 
+Open **http://127.0.0.1:4747/** in a browser for the landing page with live Resolve status, the [watchtower](docs/WATCHTOWER.md) status board rendered at `/watchtower`, the craft guide, gotchas and roadmap at `/pages/*`, and Swagger at `/docs`.
+
 ## Why
 
 Resolve's Python scripting API is powerful but awkward to reach: it needs the right environment variables, the right Python build, the same machine, and a long-lived process. That locks out everything that is not local Python - shell scripts, Node tools, n8n / Zapier-style automations, CI jobs, and AI coding agents.

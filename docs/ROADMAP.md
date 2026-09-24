@@ -56,7 +56,7 @@ render + wait, OTIO/EDL/FCPXML export, project export).
 
 - Fairlight beyond presets (whatever future API versions expose).
 - Multi-machine: point one gateway at a render node fleet.
-- A tiny web dashboard on / for humans watching the run.
+- The web pages on / now show status and docs; a live render-queue / job-progress panel is the remaining dashboard piece.
 
 PRs against any of these welcome - match the router style, extend the fake in
 `tests/fake_resolve.py`, one test per endpoint.

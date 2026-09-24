@@ -5,7 +5,7 @@ against a real Resolve, what is pending, what was decided and why, and what
 development is required next. Update it in the same commit as the change it
 describes. Agents get it as the MCP resource `dollygrip://watchtower`.
 
-_Last updated: 2026-09-24 · version 0.5.0 · 32 commits · 129 tests green ·
+_Last updated: 2026-09-24 · version 0.5.0 · 34 commits · 134 tests green ·
 302 operations · verified on DaVinci Resolve Studio 21.0.4.5 (Windows 11)_
 
 ---
@@ -42,7 +42,7 @@ Operation counts are from the live OpenAPI document (`GET /openapi.json`).
 | **Tools** | 1 | timecode <-> frames, drop-frame aware | yes |
 | **Exec** | 1 | raw Python against the live scripting objects (`--allow-exec` only) | yes |
 
-Cross-cutting: object addressing (items by unique id, clips by id or name, `current` for playhead/timeline/album), reconnect on Resolve restart, crash-proof subprocess import probe, `--token` auth, localhost-only default, `--media-dir`, MCP profiles `editor | colorist | motion | delivery | core | all`, MCP resources `openapi.json | operations | craft | gotchas | readme | watchtower`.
+Cross-cutting: object addressing (items by unique id, clips by id or name, `current` for playhead/timeline/album), reconnect on Resolve restart, crash-proof subprocess import probe, `--token` auth, localhost-only default, `--media-dir`, MCP profiles `editor | colorist | motion | delivery | core | all`, MCP resources `openapi.json | operations | craft | gotchas | readme | watchtower`. Human pages served by the gateway: `/` (live status, links), `/watchtower`, `/pages/craft|gotchas|roadmap|readme` (Markdown rendered, open even with `--token`).
 
 ## 3. Pending items
 
@@ -60,7 +60,7 @@ Ordered by value to the standing goal ("Claude can do everything a human can in 
 | P8 | **LLM keyword extraction** step for stock b-roll (script -> search terms) | completes the MoneyPrinterTurbo loop end to end | S - recipe step calling a model |
 | P9 | **AI-generated shots as a stock provider** | when stock has nothing | M |
 | P10 | **v2 contract pass** - uniform `{ok, data}` envelopes | cleanliness; v1 stays frozen | M |
-| P11 | Web dashboard on `/` for humans watching a run | nice-to-have | M |
+| P11 | Web dashboard on `/` - landing + rendered docs shipped 2026-09-24; still to do: live render-queue and job progress panel | nice-to-have | S |
 | P12 | Multi-machine / render node fleet | someday | L |
 
 Dropped by decision: cloud projects (see §4).

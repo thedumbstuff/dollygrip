@@ -48,7 +48,8 @@ src/dollygrip/
   routers/       system (+storage), projects, mediapool, timelines (+ripple-insert), items
                  (+relocate/split composites), markers (factory, mounted 3x), color (graph factory
                  mounted 4x, groups, gallery), fusion (+input discovery/expressions), render (+SSE
-                 events), recipes, stock (search/plan/assemble/b-roll), tools (offline timecode), exec_
+                 events), recipes, stock (search/plan/assemble/b-roll), tools (offline timecode), exec_,
+                 pages (human HTML at the root: /, /watchtower, /pages/* - rendered Markdown, not in OpenAPI)
   mcp_server.py  OpenAPI -> MCP tools (name = operationId) + resources, in-process ASGI dispatch,
                  mcp 1.x/2.x, PROFILES (curated tag sets)
   stock.py       StockClient: Pexels/Pixabay/Coverr search (filters, 24h cache, key rotation), downloads

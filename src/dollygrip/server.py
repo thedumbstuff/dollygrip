@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from . import __version__
 from .bridge import NothingOpen, NotFound, Rejected, ResolveBridge, ResolveUnavailable
-from .routers import color, exec_, fusion, items, mediapool, projects, recipes, render, stock, system, timelines, tools
+from .routers import color, exec_, fusion, items, mediapool, pages, projects, recipes, render, stock, system, timelines, tools
 
 API_PREFIX = "/api/v1"
 
@@ -18,7 +18,9 @@ class Settings:
     allow_exec: bool = False
     token: Optional[str] = None
     media_dir: Optional[str] = None  # where stock downloads land (default ~/DollyGrip/stock)
-    open_paths: tuple = field(default=("/api/v1/health", "/docs", "/openapi.json", "/redoc"))
+    # human pages and docs stay open even with --token (they expose nothing but the docs and health)
+    open_paths: tuple = field(default=("/api/v1/health", "/docs", "/openapi.json", "/redoc", "/", "/watchtower"))
+    open_prefixes: tuple = field(default=("/pages/",))
 
 
 def create_app(settings: Optional[Settings] = None, bridge: Optional[ResolveBridge] = None, stock_client=None) -> FastAPI:
@@ -40,7 +42,8 @@ def create_app(settings: Optional[Settings] = None, bridge: Optional[ResolveBrid
     # -- optional bearer-token auth (health and docs stay open) -----------
     @app.middleware("http")
     async def token_auth(request: Request, call_next):
-        if settings.token and request.url.path not in settings.open_paths:
+        path = request.url.path
+        if settings.token and path not in settings.open_paths and not path.startswith(settings.open_prefixes):
             supplied = request.headers.get("authorization", "")
             if supplied != f"Bearer {settings.token}":
                 return JSONResponse(status_code=401, content={"detail": "Missing or bad bearer token"})
@@ -78,5 +81,6 @@ def create_app(settings: Optional[Settings] = None, bridge: Optional[ResolveBrid
         exec_.router,
     ):
         app.include_router(r, prefix=API_PREFIX)
+    app.include_router(pages.router)  # human pages at the root: /, /watchtower, /pages/*
 
     return app
