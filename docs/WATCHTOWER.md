@@ -5,7 +5,7 @@ against a real Resolve, what is pending, what was decided and why, and what
 development is required next. Update it in the same commit as the change it
 describes. Agents get it as the MCP resource `dollygrip://watchtower`.
 
-_Last updated: 2026-09-24 · version 0.5.0 · 44 commits · 164 tests green ·
+_Last updated: 2026-09-24 · version 0.5.0 · 42 commits · 164 tests green ·
 333 operations · verified on DaVinci Resolve Studio 21.0.4.5 (Windows 11)_
 
 ---
