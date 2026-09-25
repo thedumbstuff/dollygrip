@@ -1,0 +1,36 @@
+{
+  "description": "Camera dailies. Imports the day's media into a dated bin, lays every listed clip end to end on a timeline at the camera's resolution and frame rate, applies a data burn-in preset to the project (timecode, clip name and whatever else the preset holds), and renders one review file with a light H.264 codec. DollyGrip has no 'append everything in a bin' operation, so list the clip names you want in cut order. You supply: the media paths (files or whole card folders), the clip names, the burn-in preset name (create it once in Resolve: Workspace > Data Burn-In, then save it as a preset), the timeline format and the output folder.",
+  "inputs": {
+    "bin": "dailies/2026-09-25",
+    "media_paths": ["E:/cards/A001", "E:/cards/B001"],
+    "clips": [
+      {"clip_name": "A001C001.mov"},
+      {"clip_name": "A001C002.mov"},
+      {"clip_name": "B001C001.mov"}
+    ],
+    "timeline_name": "dailies-2026-09-25",
+    "width": 1920,
+    "height": 1080,
+    "fps": 24,
+    "burn_in_preset": "Dailies TC + Clip",
+    "render_format": "mp4",
+    "render_codec": "H264",
+    "out_dir": "D:/dailies/out"
+  },
+  "input_notes": {
+    "media_paths": "Files or folders; a folder imports every clip inside it.",
+    "clips": "Clip names as they land in the media pool (usually the file names). Trim with start_frame / end_frame in source-fps frames.",
+    "burn_in_preset": "Must already exist; GET /render/burn-in/presets lists them.",
+    "render_codec": "H264 in mp4 gives the smallest review file. For an editorial proxy pick a mov codec key from GET /render/formats/mov/codecs (DNxHR, or ProRes Proxy where your platform renders it)."
+  },
+  "steps": [
+    {"name": "bin", "op": "set_current_folder", "args": {"path": "{{ inputs.bin }}", "create": true}},
+    {"name": "import", "op": "import_media", "args": {"paths": "{{ inputs.media_paths }}"}},
+    {"name": "tl", "op": "create_timeline", "args": {"name": "{{ inputs.timeline_name }}", "width": "{{ inputs.width }}", "height": "{{ inputs.height }}", "fps": "{{ inputs.fps }}"}},
+    {"name": "cut", "op": "append_items", "args": {"items": "{{ inputs.clips }}"}},
+    {"name": "burnin", "op": "load_burn_in_preset", "args": {"name": "{{ inputs.burn_in_preset }}"}},
+    {"name": "render", "op": "add_job", "args": {"format": "{{ inputs.render_format }}", "codec": "{{ inputs.render_codec }}", "mode": "single", "settings": {"TargetDir": "{{ inputs.out_dir }}", "CustomName": "{{ inputs.timeline_name }}", "SelectAllFrames": true}}},
+    {"name": "wait", "op": "wait_for_job", "args": {"job_id": "{{ steps.render.job_id }}", "timeout": 3600}}
+  ],
+  "stop_on_error": true
+}

@@ -27,6 +27,8 @@ uv run dollygrip mcp [--profile editor] [--tags timelines,render] [--allow-exec]
 uv run dollygrip run recipe.json [--dry-run]                       # run a pipeline without a server
 ```
 
+`uv sync` fails after a version bump while `dollygrip serve` is running (the launcher exe is locked); stop the server first (`taskkill /F /IM dollygrip.exe` on Windows).
+
 No linters are configured; pytest is the only gate. Commit in logical chunks; never push
 unless asked.
 

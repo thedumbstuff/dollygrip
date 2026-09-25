@@ -3,8 +3,12 @@ render) as one ordered list of steps, each step being any DollyGrip operation
 by name (the operationId you see in /docs and as MCP tool names).
 
 Later steps can reference earlier results with `{{ steps.<name>.<path> }}`
-templates, e.g. `{{ steps.assemble.results[0].item_id }}`. A `dry_run` returns
-the resolved plan without touching Resolve. Steps are dispatched in-process
+templates, e.g. `{{ steps.assemble.results[0].item_id }}`, and the recipe's
+own `inputs` block with `{{ inputs.<key> }}`. A `dry_run` returns the resolved
+plan without touching Resolve: it checks every operation name and argument
+name against the app's OpenAPI catalogue, resolves `inputs` templates for real
+and stands in a `<steps.x.y>` placeholder for anything an earlier step would
+return. Steps are dispatched in-process
 through the same FastAPI app, so every gateway guarantee (lock, reconnect,
 error mapping) applies.
 """
@@ -28,6 +32,14 @@ class RecipeError(ValueError):
     """Bad recipe (unknown op, bad template) - reported per step, never a 500."""
 
 
+class _Planned:
+    """Stand-in for the result of a step that a dry run did not execute: any
+    path under it resolves to a readable placeholder string."""
+
+    def __init__(self, path: str):
+        self.path = path
+
+
 def tool_specs(app: FastAPI) -> Dict[str, ToolSpec]:
     """Operation name -> spec, cached on the app."""
     cache = getattr(app.state, "recipe_specs", None)
@@ -44,6 +56,8 @@ def _lookup(path: str, context: Dict[str, Any]) -> Any:
         m = _INDEX.match(raw)
         if not m:
             raise RecipeError(f"bad template path segment {raw!r}")
+        if isinstance(current, _Planned):
+            break
         key, indexes = m.group(1), m.group(2)
         if key:
             if isinstance(current, dict) and key in current:
@@ -53,11 +67,27 @@ def _lookup(path: str, context: Dict[str, Any]) -> Any:
             else:
                 raise RecipeError(f"template path {path!r}: no key {key!r}")
         for idx in re.findall(r"\[(\d+)\]", indexes):
+            if isinstance(current, _Planned):
+                break
             try:
                 current = current[int(idx)]
             except (IndexError, KeyError, TypeError) as e:
                 raise RecipeError(f"template path {path!r}: index [{idx}] out of range") from e
+    if isinstance(current, _Planned):
+        return f"<{path}>"
     return current
+
+
+def check_args(spec: ToolSpec, args: Dict[str, Any]) -> None:
+    """Dry-run validation: argument names must exist on the operation and the
+    required ones must be present (a live call silently drops unknown names)."""
+    props = spec.input_schema.get("properties", {})
+    unknown = sorted(k for k in args if k not in props and k != "body")
+    if unknown:
+        raise RecipeError(f"unknown argument(s) {unknown} for {spec.name!r}; valid: {sorted(props)}")
+    missing = [k for k in spec.input_schema.get("required", []) if k not in args]
+    if missing:
+        raise RecipeError(f"missing required argument(s) {missing} for {spec.name!r}")
 
 
 def render(value: Any, context: Dict[str, Any]) -> Any:
@@ -81,10 +111,11 @@ async def run_recipe(
     dry_run: bool = False,
     stop_on_error: bool = True,
     token: Optional[str] = None,
+    inputs: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     specs = tool_specs(app)
     dispatcher = Dispatcher(app, token)
-    context: Dict[str, Any] = {"steps": {}}
+    context: Dict[str, Any] = {"steps": {}, "inputs": dict(inputs or {})}
     report: List[Dict[str, Any]] = []
     ok = True
     try:
@@ -100,9 +131,11 @@ async def run_recipe(
                     args = render(step.get("args") or {}, context)
                     entry["args"] = args
                     if dry_run:
+                        check_args(spec, args)
                         entry["status"] = "planned"
-                        # let later templates resolve against a placeholder
-                        context["steps"][name] = {"_planned": True}
+                        # later templates resolve against a placeholder
+                        context["steps"][name] = _Planned(f"steps.{name}")
+                        context["last"] = _Planned("last")
                     else:
                         started = time.monotonic()
                         result = await dispatcher.call(spec, args)
@@ -127,7 +160,7 @@ async def run_recipe(
     return {"ok": ok, "dry_run": dry_run, "steps": report}
 
 
-def run_recipe_sync(app: FastAPI, steps, dry_run=False, stop_on_error=True, token=None) -> Dict[str, Any]:
+def run_recipe_sync(app: FastAPI, steps, dry_run=False, stop_on_error=True, token=None, inputs=None) -> Dict[str, Any]:
     """Blocking wrapper for use from sync code (the HTTP endpoint runs in a
     worker thread with no event loop of its own; the CLI has none either)."""
-    return asyncio.run(run_recipe(app, steps, dry_run, stop_on_error, token))
+    return asyncio.run(run_recipe(app, steps, dry_run, stop_on_error, token, inputs))

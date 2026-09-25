@@ -1,0 +1,39 @@
+{
+  "description": "Music video, ABC pattern. Stock b-roll on V1 covers the length of the song (stock_b_roll places the song on A1 and measures it), a black carrier clip sits on V2, and ONE Fusion comp on the carrier holds the title and the caption. The comp outputs the two Text+ layers over transparency (the carrier's own black is never merged in), so the b-roll shows through everywhere except the text. You supply: the song path, stock search terms in the order they should appear, a black carrier clip at least as long as the song (any black video file), the song length in frames, the title and caption text, and the output folder. Stock search needs a provider key in the gateway's .env (Pexels, Pixabay or Coverr). For lyric-timed captions, add set_tool_keyframes steps on the Caption layer as described in the music video section of docs/VIDEO_CRAFT.md.",
+  "inputs": {
+    "timeline_name": "abc-mv-v1",
+    "song_path": "D:/music/abc_song.wav",
+    "terms": ["apple orchard", "bouncing ball", "cat playing", "dog running"],
+    "provider": "pexels",
+    "carrier_path": "D:/assets/black_3min_1080p.mp4",
+    "carrier_name": "black_3min_1080p.mp4",
+    "song_frames": 5400,
+    "title": "The ABC Song",
+    "caption": "Sing along!",
+    "out_dir": "D:/out"
+  },
+  "input_notes": {
+    "song_frames": "Song length in carrier-clip frames (30 fps: 3 min = 5400). The carrier is trimmed to this so it ends with the song.",
+    "terms": "Search terms in script order; stock_b_roll spreads them across the song.",
+    "carrier_path": "A black video at the timeline's frame rate, at least song_frames long."
+  },
+  "steps": [
+    {"name": "tl", "op": "create_timeline", "args": {"name": "{{ inputs.timeline_name }}", "width": 1920, "height": 1080, "fps": 30, "start_timecode": "00:00:00:00", "extra_video_tracks": 1}},
+    {"name": "broll", "op": "stock_b_roll", "args": {"terms": "{{ inputs.terms }}", "voiceover_path": "{{ inputs.song_path }}", "provider": "{{ inputs.provider }}", "aspect": "landscape", "max_clip_duration": 4, "mode": "script_order", "fit": "fill", "track_index": 1, "bin": "stock"}},
+    {"name": "bin", "op": "set_current_folder", "args": {"path": "carrier", "create": true}},
+    {"name": "import_carrier", "op": "import_media", "args": {"paths": ["{{ inputs.carrier_path }}"]}},
+    {"name": "carrier", "op": "append_items", "args": {"items": [{"clip_name": "{{ inputs.carrier_name }}", "track_index": 2, "record_frame": 0, "start_frame": 0, "end_frame": "{{ inputs.song_frames }}", "media_type": "video"}]}},
+    {"name": "comp", "op": "add_comp", "args": {"item_id": "{{ steps.carrier.results[0].item_id }}"}},
+    {"name": "title", "op": "add_tool", "args": {"item_id": "{{ steps.carrier.results[0].item_id }}", "comp": "1", "tool_id": "TextPlus", "name": "Title", "inputs": {"UseFrameFormatSettings": 1}}},
+    {"name": "title_style", "op": "text_plus", "args": {"item_id": "{{ steps.carrier.results[0].item_id }}", "comp": "1", "tool": "Title", "text": "{{ inputs.title }}", "style": "Bold", "size": 0.09, "center": [0.5, 0.62], "color": [1, 1, 1], "shadow": true}},
+    {"name": "caption", "op": "add_tool", "args": {"item_id": "{{ steps.carrier.results[0].item_id }}", "comp": "1", "tool_id": "TextPlus", "name": "Caption", "inputs": {"UseFrameFormatSettings": 1}}},
+    {"name": "caption_style", "op": "text_plus", "args": {"item_id": "{{ steps.carrier.results[0].item_id }}", "comp": "1", "tool": "Caption", "text": "{{ inputs.caption }}", "size": 0.05, "center": [0.5, 0.2], "color": [1, 1, 1], "outline": [0, 0, 0], "outline_thickness": 0.02}},
+    {"name": "merge", "op": "add_tool", "args": {"item_id": "{{ steps.carrier.results[0].item_id }}", "comp": "1", "tool_id": "Merge", "name": "TextMerge"}},
+    {"name": "merge_bg", "op": "connect_tool_input", "args": {"item_id": "{{ steps.carrier.results[0].item_id }}", "comp": "1", "tool": "TextMerge", "input": "Background", "source_tool": "Title"}},
+    {"name": "merge_fg", "op": "connect_tool_input", "args": {"item_id": "{{ steps.carrier.results[0].item_id }}", "comp": "1", "tool": "TextMerge", "input": "Foreground", "source_tool": "Caption"}},
+    {"name": "output", "op": "connect_tool_input", "args": {"item_id": "{{ steps.carrier.results[0].item_id }}", "comp": "1", "tool": "MediaOut1", "input": "Input", "source_tool": "TextMerge"}},
+    {"name": "render", "op": "add_job", "args": {"format": "mp4", "codec": "H264", "settings": {"TargetDir": "{{ inputs.out_dir }}", "CustomName": "{{ inputs.timeline_name }}", "SelectAllFrames": true, "FormatWidth": 1920, "FormatHeight": 1080}}},
+    {"name": "wait", "op": "wait_for_job", "args": {"job_id": "{{ steps.render.job_id }}", "timeout": 3600}}
+  ],
+  "stop_on_error": true
+}

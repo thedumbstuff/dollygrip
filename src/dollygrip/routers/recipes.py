@@ -20,6 +20,7 @@ class RecipeStep(BaseModel):
 
 class Recipe(BaseModel):
     steps: List[RecipeStep]
+    inputs: Dict[str, Any] = Field(default_factory=dict, description="Values the steps reference as {{ inputs.<key> }} (paths, names, ranges)")
     dry_run: bool = Field(default=False, description="Resolve templates and validate ops without calling Resolve")
     stop_on_error: bool = True
 
@@ -39,8 +40,9 @@ def recipe_operations(request: Request):
 @router.post("/run")
 def run(body: Recipe, request: Request):
     """Run steps in order; each step's result is available to later steps as
-    `{{ steps.<name>... }}` (or `{{ last... }}`). Steps run through the gateway
+    `{{ steps.<name>... }}` (or `{{ last... }}`); the `inputs` block is
+    `{{ inputs.<key> }}`. Steps run through the gateway
     itself, so the Resolve lock is taken per step, never across the recipe."""
     auth = request.headers.get("authorization", "")
     token = auth[7:] if auth.lower().startswith("bearer ") else None
-    return run_recipe_sync(request.app, [s.model_dump() for s in body.steps], body.dry_run, body.stop_on_error, token)
+    return run_recipe_sync(request.app, [s.model_dump() for s in body.steps], body.dry_run, body.stop_on_error, token, body.inputs)

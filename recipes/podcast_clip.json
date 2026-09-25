@@ -1,0 +1,33 @@
+{
+  "description": "Podcast highlight (16:9). Imports one long recording, cuts a single in/out range out of it onto a 1920x1080 timeline, adds a Text+ lower third with the guest's name, generates captions from the speech with Resolve's auto subtitles (Studio), and renders 1080p H.264 with the captions burned in. DollyGrip has no SRT or subtitle-file import, so an existing SRT cannot be burned in; captions come from auto_subtitles and the guest name from the lower third. Delete the captions step (and the two subtitle render settings) if you do not want captions. You supply: the recording path and file name, the source in/out in SOURCE-fps frames, the guest name and title, and the output folder.",
+  "inputs": {
+    "bin": "podcast",
+    "recording_path": "D:/podcast/ep42_full.mp4",
+    "recording_name": "ep42_full.mp4",
+    "source_in": 54000,
+    "source_out": 55800,
+    "guest_name": "Dr. Asha Rao",
+    "guest_title": "Learning scientist",
+    "caption_language": "english",
+    "timeline_name": "ep42-clip-01",
+    "out_dir": "D:/out"
+  },
+  "input_notes": {
+    "source_in": "First frame of the clip, counted in the recording's own frame rate (30 fps: minute 30 = 54000).",
+    "source_out": "Frame after the last one you want (exclusive end), same units.",
+    "caption_language": "auto_subtitles language key, e.g. english or auto."
+  },
+  "steps": [
+    {"name": "bin", "op": "set_current_folder", "args": {"path": "{{ inputs.bin }}", "create": true}},
+    {"name": "import", "op": "import_media", "args": {"paths": ["{{ inputs.recording_path }}"]}},
+    {"name": "tl", "op": "create_timeline", "args": {"name": "{{ inputs.timeline_name }}", "width": 1920, "height": 1080, "fps": 30, "start_timecode": "00:00:00:00", "extra_video_tracks": 1}},
+    {"name": "cut", "op": "append_items", "args": {"items": [{"clip_name": "{{ inputs.recording_name }}", "start_frame": "{{ inputs.source_in }}", "end_frame": "{{ inputs.source_out }}", "record_frame": 0}]}},
+    {"name": "head", "op": "set_playhead", "args": {"timecode": "00:00:00:00"}},
+    {"name": "lower_third", "op": "insert_generator", "args": {"kind": "fusion_title", "name": "Text+", "text": "{{ inputs.guest_name }}\n{{ inputs.guest_title }}"}},
+    {"name": "lower_third_style", "op": "text_plus", "args": {"item_id": "{{ steps.lower_third.item_id }}", "text": "{{ inputs.guest_name }}\n{{ inputs.guest_title }}", "style": "Bold", "size": 0.045, "center": [0.24, 0.16], "color": [1, 1, 1], "shadow": true}},
+    {"name": "captions", "op": "auto_subtitles", "args": {"language": "{{ inputs.caption_language }}", "preset": "NETFLIX"}},
+    {"name": "render", "op": "add_job", "args": {"format": "mp4", "codec": "H264", "settings": {"TargetDir": "{{ inputs.out_dir }}", "CustomName": "{{ inputs.timeline_name }}", "SelectAllFrames": true, "FormatWidth": 1920, "FormatHeight": 1080, "ExportSubtitle": true, "SubtitleFormat": "BurnIn"}}},
+    {"name": "wait", "op": "wait_for_job", "args": {"job_id": "{{ steps.render.job_id }}", "timeout": 1800}}
+  ],
+  "stop_on_error": true
+}

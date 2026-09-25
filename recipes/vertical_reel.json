@@ -1,0 +1,32 @@
+{
+  "description": "Phone reel (9:16). Imports your clips into a bin, builds a 1080x1920 30 fps timeline, lays the clips end to end on V1, drops a Fusion Text+ title card at the head, styles it for the upper safe zone, then queues an H.264 render and waits for it. You supply: the clip paths, the clip names as they appear in the media pool (the file names), the title text, the timeline name and the output folder.",
+  "inputs": {
+    "bin": "reels",
+    "clip_paths": ["D:/shoot/hook.mp4", "D:/shoot/demo.mp4", "D:/shoot/outro.mp4"],
+    "clips": [
+      {"clip_name": "hook.mp4"},
+      {"clip_name": "demo.mp4"},
+      {"clip_name": "outro.mp4"}
+    ],
+    "timeline_name": "reel-v1",
+    "title": "Homework, but with a tutor",
+    "out_dir": "D:/out"
+  },
+  "input_notes": {
+    "clip_paths": "Absolute paths as seen by the machine running Resolve.",
+    "clips": "One {clip_name} per clip, in cut order. Add start_frame / end_frame (source-fps frames) to trim a clip.",
+    "title": "Keep it under about 30 characters so it fits one line at 9:16."
+  },
+  "steps": [
+    {"name": "bin", "op": "set_current_folder", "args": {"path": "{{ inputs.bin }}", "create": true}},
+    {"name": "import", "op": "import_media", "args": {"paths": "{{ inputs.clip_paths }}"}},
+    {"name": "tl", "op": "create_timeline", "args": {"name": "{{ inputs.timeline_name }}", "width": 1080, "height": 1920, "fps": 30, "start_timecode": "00:00:00:00", "extra_video_tracks": 1}},
+    {"name": "cut", "op": "append_items", "args": {"items": "{{ inputs.clips }}"}},
+    {"name": "head", "op": "set_playhead", "args": {"timecode": "00:00:00:00"}},
+    {"name": "title", "op": "insert_generator", "args": {"kind": "fusion_title", "name": "Text+", "text": "{{ inputs.title }}"}},
+    {"name": "style", "op": "text_plus", "args": {"item_id": "{{ steps.title.item_id }}", "text": "{{ inputs.title }}", "style": "Bold", "size": 0.06, "center": [0.5, 0.72], "color": [1, 1, 1], "shadow": true}},
+    {"name": "render", "op": "add_job", "args": {"format": "mp4", "codec": "H264", "settings": {"TargetDir": "{{ inputs.out_dir }}", "CustomName": "{{ inputs.timeline_name }}", "SelectAllFrames": true, "FormatWidth": 1080, "FormatHeight": 1920}}},
+    {"name": "wait", "op": "wait_for_job", "args": {"job_id": "{{ steps.render.job_id }}", "timeout": 1800}}
+  ],
+  "stop_on_error": true
+}

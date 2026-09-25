@@ -36,7 +36,8 @@ def main(argv=None) -> int:
 
     runp = sub.add_parser("run", help="Run a recipe file (JSON, or YAML if pyyaml is installed) against Resolve without starting a server")
     runp.add_argument("recipe", help="Path to the recipe file: {steps: [{name, op, args}], stop_on_error}")
-    runp.add_argument("--dry-run", action="store_true", help="Resolve templates and validate ops only")
+    runp.add_argument("--dry-run", action="store_true", help="Validate ops, argument names and templates offline (no Resolve connection)")
+    runp.add_argument("--input", action="append", default=[], metavar="KEY=VALUE", help="Override a recipe input (value parsed as JSON when it parses, else a string); repeatable")
     runp.add_argument("--allow-exec", action="store_true", help="Allow exec_code steps")
 
     args = parser.parse_args(argv)
@@ -115,8 +116,18 @@ def _run(args) -> int:
             return 2
     steps = recipe["steps"] if isinstance(recipe, dict) else recipe
     stop = recipe.get("stop_on_error", True) if isinstance(recipe, dict) else True
+    inputs = dict(recipe.get("inputs") or {}) if isinstance(recipe, dict) else {}
+    for pair in args.input:
+        key, sep, value = pair.partition("=")
+        if not sep or not key:
+            print(f"--input expects KEY=VALUE, got {pair!r}", file=sys.stderr)
+            return 2
+        try:
+            inputs[key] = json.loads(value)
+        except ValueError:
+            inputs[key] = value
     app = create_app(Settings(allow_exec=args.allow_exec))
-    report = run_recipe_sync(app, steps, dry_run=args.dry_run, stop_on_error=stop)
+    report = run_recipe_sync(app, steps, dry_run=args.dry_run, stop_on_error=stop, inputs=inputs)
     for step in report["steps"]:
         line = f"[{step['status']:>7}] {step['name']} ({step.get('op')})"
         if step.get("error"):
