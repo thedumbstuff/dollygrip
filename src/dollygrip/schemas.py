@@ -553,6 +553,7 @@ class ExportFrame(BaseModel):
     path: str = Field(description="Destination with a valid image extension, e.g. D:/out/frame.png")
     timecode: Optional[str] = Field(default=None, description="Move the playhead here first (HH:MM:SS:FF)")
     page: Optional[str] = Field(default="color", description="Page to export from; the Edit page viewer exports black for Fusion titles, so the default switches to Color and switches back")
+    settle: float = Field(default=0.7, ge=0, le=10, description="Seconds to wait after moving the playhead before exporting (live: the viewer lags the playhead by one request otherwise)")
 
 
 # --------------------------------------------------------------------------

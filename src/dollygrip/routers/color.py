@@ -4,6 +4,8 @@ keyframe mode, frame export."""
 
 from __future__ import annotations
 
+import time
+
 from typing import Callable
 
 from fastapi import APIRouter, Depends, Query
@@ -363,6 +365,8 @@ def export_current_frame(body: ExportFrame, bridge: ResolveBridge = Depends(reso
     try:
         if body.timecode:
             require(bridge.current_timeline().SetCurrentTimecode(body.timecode), f"Resolve refused timecode {body.timecode!r}")
+            if body.settle:
+                time.sleep(body.settle)  # the viewer renders the new position a moment later; exporting at once gives the PREVIOUS frame
         require(bridge.current_project().ExportCurrentFrameAsStill(body.path), f"Resolve refused to export a still to {body.path!r}")
     finally:
         if body.page and before and before != body.page:

@@ -336,3 +336,7 @@ can; the rest you need to know when you reach for `/exec` or extend the API.
 - **Fusion expression `time` is in FRAMES.** `sin(time/5)` is a 31-frame
   period, `(time/9) % 1.3` sweeps 30x faster than intended; write `(time/30)`
   for seconds at 30 fps. `%`, `fmod`, `floor`, `abs` all work in expressions.
+- **`ExportCurrentFrameAsStill` right after `SetCurrentTimecode` exports the
+  PREVIOUS position** (live: every QA still was one request late, which looked
+  like wrong keyframes). The viewer needs a moment; `export-frame` now settles
+  0.7 s after moving the playhead (`settle`).
