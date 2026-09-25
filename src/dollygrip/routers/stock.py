@@ -3,11 +3,12 @@ provider per script keyword, pick clips that cover the voiceover, stitch)
 done natively in Resolve: the clips land as real timeline items you can
 still grade, retime and re-cut.
 
+  POST /stock/keywords  script text -> search terms (heuristic or an LLM provider)
   POST /stock/search    keywords -> candidate materials (no download)
   POST /stock/download  materials -> files on the Resolve machine
   POST /stock/plan      keywords -> shot list (downloads by default)
   POST /stock/assemble  shot list -> timeline items (+ optional voiceover)
-  POST /stock/b-roll    all of the above in one call
+  POST /stock/b-roll    all of the above in one call (terms, or a script)
 """
 
 from __future__ import annotations
@@ -20,6 +21,8 @@ from pydantic import BaseModel, Field
 from ..bridge import Rejected, ResolveBridge, require
 from ..broll import Shot, plan_shots, total_duration
 from ..deps import resolve_session
+from ..keywords import keywords_from_script
+from ..schemas import KeywordsRequest
 from ..serialize import item_summary, safe
 from ..stock import ASPECTS, PROVIDERS, Material, StockClient, StockError
 
@@ -103,6 +106,12 @@ class AssembleRequest(BaseModel):
 
 
 class BRollRequest(SearchRequest):
+    terms: List[str] = Field(default_factory=list, description="Search keywords in script order (or give `script` instead)")
+    script: Optional[str] = Field(default=None, description="Voiceover/script text; terms are derived per segment like POST /stock/keywords")
+    max_terms: int = Field(default=8, ge=1, le=50, description="With `script`: how many derived terms to search")
+    keywords_provider: Optional[Literal["heuristic", "anthropic", "openai", "deepseek"]] = Field(
+        default=None, description="With `script`: keyword provider (None = env DOLLYGRIP_KEYWORDS_PROVIDER, else heuristic)"
+    )
     audio_duration: Optional[float] = Field(default=None, description="Seconds to cover (or give voiceover_path and it is measured)")
     voiceover_path: Optional[str] = Field(default=None, description="Voiceover file; imported, placed on the audio track and used for the duration")
     voiceover_track: int = Field(default=1, ge=1)
@@ -219,6 +228,26 @@ def stock_providers(request: Request):
     return {"providers": client.providers(), "media_dir": str(client.media_dir), "aspects": {k: list(v) for k, v in ASPECTS.items()}}
 
 
+def _keywords(request: Request, text: str, max_terms: int = 8, per_segment: bool = True, provider: Optional[str] = None) -> Dict:
+    # tests put an httpx transport on app.state to stub the LLM providers
+    transport = getattr(request.app.state, "keywords_transport", None)
+    return keywords_from_script(text, max_terms=max_terms, per_segment=per_segment, provider=provider, transport=transport)
+
+
+@router.post("/keywords")
+def stock_keywords(body: KeywordsRequest, request: Request):
+    """Script / voiceover text -> stock-search terms, ready for /stock/search,
+    /stock/plan or /stock/b-roll. Splits the script into sentences and keeps
+    1-3 concrete, visual terms per segment plus a global list in script order.
+    Offline heuristic by default; `provider` (or env DOLLYGRIP_KEYWORDS_PROVIDER)
+    = anthropic | openai | deepseek asks an LLM with the matching *_API_KEY and
+    falls back to the heuristic on any failure (`provider_used` says which ran,
+    `fallback_reason` why). Returns {segments: [{text, terms}], terms, provider_used}."""
+    if not body.text.strip():
+        raise Rejected("text is empty")
+    return _keywords(request, body.text, body.max_terms, body.per_segment, body.provider)
+
+
 @router.post("/search")
 def stock_search(body: SearchRequest, request: Request):
     """Candidates per keyword - nothing is downloaded."""
@@ -279,8 +308,19 @@ def stock_assemble(body: AssembleRequest, bridge: ResolveBridge = Depends(resolv
 def stock_b_roll(body: BRollRequest, request: Request, bridge: ResolveBridge = Depends(resolve_session)):
     """The whole MoneyPrinterTurbo move in one call: keywords -> stock clips ->
     shot plan covering the voiceover -> real timeline items in Resolve. Give
-    `audio_duration`, or `voiceover_path` (placed on the audio track and measured)."""
+    `terms`, or `script` (voiceover text; terms are derived per segment as in
+    POST /stock/keywords and returned under `keywords`). Give `audio_duration`,
+    or `voiceover_path` (placed on the audio track and measured)."""
     client = get_stock(request)
+    keywords = None
+    terms = list(body.terms)
+    if not terms:
+        if not (body.script or "").strip():
+            raise Rejected("Give terms or script")
+        keywords = _keywords(request, body.script, body.max_terms, True, body.keywords_provider)
+        terms = keywords["terms"]
+        if not terms:
+            raise Rejected("No search terms could be derived from the script")
     tl = bridge.current_timeline()
     tl_fps = _tl_fps(tl)
     voiceover = None
@@ -296,11 +336,14 @@ def stock_b_roll(body: BRollRequest, request: Request, bridge: ResolveBridge = D
         duration = pre["voiceover"]["seconds"]
         voiceover = None
     plan_req = PlanRequest(
-        terms=body.terms, provider=body.provider, aspect=body.aspect, min_duration=body.min_duration, per_page=body.per_page,
+        terms=terms, provider=body.provider, aspect=body.aspect, min_duration=body.min_duration, per_page=body.per_page,
         audio_duration=duration, max_clip_duration=body.max_clip_duration, mode=body.mode, seed=body.seed, download=True,
     )
     plan = _plan(client, plan_req)
     built = _assemble(bridge, plan["shots"], body.track_index, body.bin, body.fit, voiceover)
     if pre:
         built["voiceover"] = pre["voiceover"]
-    return {"plan": {k: plan[k] for k in ("total_duration", "audio_duration", "attribution")}, "shots": len(plan["shots"]), **built, "timeline_fps": tl_fps}
+    out = {"plan": {k: plan[k] for k in ("total_duration", "audio_duration", "attribution")}, "shots": len(plan["shots"]), **built, "timeline_fps": tl_fps}
+    if keywords is not None:
+        out["keywords"] = keywords
+    return out

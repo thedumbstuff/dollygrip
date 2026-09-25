@@ -49,6 +49,11 @@ hr{border:0;border-top:1px solid var(--line);margin:2em 0}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:18px 0}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}.card h3{margin:0 0 .3em;font-size:1.05rem}.card p{margin:0;color:var(--muted);font-size:14px}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:15px}.kv b{color:var(--muted);font-weight:600}
+.rq-head{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}.rq-head h2{flex:1}
+.rq-note{font-size:14px;color:var(--muted);margin:.4em 0}.rq-note.bad{color:var(--bad)}
+.rq-bar{height:8px;border-radius:99px;background:var(--code);overflow:hidden;min-width:120px}.rq-bar i{display:block;height:100%;background:var(--accent);transition:width .4s}
+.rq-bar.done i{background:var(--ok)}.rq-bar.fail i{background:var(--bad)}
+.rq-sub{font-size:13px;color:var(--muted)}
 """
 
 _HEAD = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -88,6 +93,67 @@ def _page(name: str) -> HTMLResponse:
     return HTMLResponse(_shell(f"DollyGrip - {title}", body, active))
 
 
+# Live render-queue panel. Lists jobs from GET /api/v1/render/jobs every 3 s
+# (status per job from GET /render/jobs/{id} when the list lacks it - real
+# Resolve's GetRenderJobList carries no status), and follows the job that is
+# rendering over the SSE route /render/jobs/{id}/events. SSE is read with
+# fetch() streaming, not EventSource, so the bearer header can be sent: with
+# --token set, open the page as /?token=... and the panel forwards it as
+# `Authorization: Bearer`. Polling and the stream stop while the tab is hidden.
+_RENDER_PANEL_JS = """<script>
+(function(){
+const API='/api/v1/render/jobs',SEP=String.fromCharCode(10,10);
+const tok=new URLSearchParams(location.search).get('token');
+const H=tok?{Authorization:'Bearer '+tok}:{};
+const $=id=>document.getElementById(id);
+let timer=null,stream=null,streamJob=null,rows=[];const live={};
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function getJSON(u){const r=await fetch(u,{headers:H,cache:'no-store'});let b={};try{b=await r.json();}catch(e){}
+ if(!r.ok){const e=new Error(b.detail||('HTTP '+r.status));e.status=r.status;throw e;}return b;}
+function reason(e){
+ if(e.status===401)return tok?'The token in the page URL was rejected.':'This gateway requires a token: sign in with ?token=YOUR_TOKEN on this page URL.';
+ if(e.status===503)return 'Resolve is not reachable ('+e.message+'). Still watching...';
+ if(e.status===409)return 'No project is open in Resolve ('+e.message+'). Still watching...';
+ return 'Could not read the render queue: '+e.message;}
+function eta(ms){if(!ms)return '';const s=Math.round(ms/1000);return s<60?s+' s left':Math.floor(s/60)+' min '+(s%60)+' s left';}
+function paint(rendering){
+ const note=$('rq-note'),table=$('rq-table');
+ if(!rows.length){table.hidden=true;note.className='rq-note';note.textContent='The render queue is empty.'+(rendering?' (Resolve reports a render in progress.)':'');return;}
+ note.textContent='';table.hidden=false;
+ $('rq-body').innerHTML=rows.map(j=>{const st=Object.assign({},j,live[j.JobId]||{});const pct=Math.max(0,Math.min(100,Number(st.CompletionPercentage)||0));
+  const s=String(st.JobStatus||'unknown');const cls=s==='Complete'?'done':(s==='Failed'||s==='Cancelled')?'fail':'';
+  const out=[st.TargetDir,st.OutputFilename].filter(Boolean).join('/');
+  return '<tr data-job="'+esc(j.JobId)+'"><td><code>'+esc(j.JobId)+'</code><div class="rq-sub">'+esc(st.RenderJobName||'')+'</div></td><td>'+esc(st.TimelineName||'')+'</td><td>'+esc(out)+'</td><td>'+esc(s)+(st.Error?'<div class="rq-sub">'+esc(st.Error)+'</div>':'')+'</td>'
+   +'<td><div class="rq-bar '+cls+'"><i style="width:'+pct+'%"></i></div><div class="rq-sub">'+pct+'% '+esc(eta(st.EstimatedTimeRemainingInMs))+'</div></td></tr>';}).join('');}
+async function tick(){
+ try{const d=await getJSON(API);const jobs=(d.jobs||[]).slice(0,50);
+  const st=await Promise.all(jobs.map(j=>('JobStatus' in j)?{}:getJSON(API+'/'+encodeURIComponent(j.JobId)).catch(()=>({}))));
+  rows=jobs.map((j,i)=>Object.assign({},j,st[i]));
+  paint(d.rendering);
+  const active=rows.find(r=>r.JobStatus==='Rendering');if(active)follow(active.JobId);
+ }catch(e){rows=[];$('rq-table').hidden=true;const n=$('rq-note');n.className='rq-note bad';n.textContent=reason(e);}}
+function stopStream(){if(stream){stream.abort();}stream=null;streamJob=null;$('rq-live').textContent='';}
+async function follow(id){
+ if(streamJob===id)return;stopStream();const ac=new AbortController();stream=ac;streamJob=id;
+ $('rq-live').textContent='live: '+id;
+ try{const r=await fetch(API+'/'+encodeURIComponent(id)+'/events?poll=1',{headers:H,signal:ac.signal});
+  if(!r.ok||!r.body)throw new Error('no stream');
+  const rd=r.body.getReader(),dec=new TextDecoder();let buf='';
+  for(;;){const x=await rd.read();if(x.done)break;buf+=dec.decode(x.value,{stream:true});let k;
+   while((k=buf.indexOf(SEP))>=0){const blk=buf.slice(0,k);buf=buf.slice(k+2);
+    const ev=(blk.match(/^event: (.*)$/m)||[])[1],data=(blk.match(/^data: (.*)$/m)||[])[1];
+    if(data){try{live[id]=JSON.parse(data);paint(false);}catch(e){}}
+    if(ev==='done'||ev==='timeout'){delete live[id];if(stream===ac)stopStream();tick();return;}}}
+ }catch(e){}
+ if(stream===ac)stopStream();}
+function start(){if(timer)return;tick();timer=setInterval(tick,3000);}
+function stop(){clearInterval(timer);timer=null;stopStream();}
+document.addEventListener('visibilitychange',()=>document.hidden?stop():start());
+start();
+})();
+</script>"""
+
+
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request):
     """Landing page: live status and the doors into the project."""
@@ -103,6 +169,12 @@ def home(request: Request):
  <a class="card" href="/pages/roadmap" style="text-decoration:none"><h3>Roadmap</h3><p>The longer climb.</p></a>
  <a class="card" href="/pages/readme" style="text-decoration:none"><h3>README</h3><p>Quickstart, Claude/MCP integration, security.</p></a>
 </div>
+<div class="rq-head"><h2>Render queue</h2><span id="rq-live" class="rq-sub"></span></div>
+<div id="render-queue" data-api="/api/v1/render/jobs">
+ <p id="rq-note" class="rq-note">Loading the render queue...</p>
+ <table id="rq-table" hidden><thead><tr><th>Job</th><th>Timeline</th><th>Output</th><th>Status</th><th style="min-width:180px">Progress</th></tr></thead><tbody id="rq-body"></tbody></table>
+</div>
+{_RENDER_PANEL_JS}
 <h2>This gateway</h2>
 <div class="kv">
  <b>Version</b><span>{__version__}</span>

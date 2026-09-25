@@ -79,6 +79,21 @@ curl -X POST "localhost:4747/api/v1/render/jobs/$JOB/wait?timeout=900"
 
 More in [`examples/`](examples/) - including [`data_driven_titles.py`](examples/data_driven_titles.py), which styles and animates one Text+ per caption, and [`counting_cards.py`](examples/counting_cards.py), a complete kids' counting video made from nothing but API-built Fusion titles (background + animated digit + word + stars) and an offline TTS voiceover.
 
+### Examples
+
+| Example | What it shows | Run |
+|---|---|---|
+| [`recipes/`](recipes/) | Four production recipes: vertical reel, podcast clip, dailies with burn-in, music video overlay | `dollygrip run recipes/vertical_reel.json --dry-run` |
+| [`recipe_reel.json`](examples/recipe_reel.json) | A vertical reel as one recipe, with a step result templated into a later step | `dollygrip run examples/recipe_reel.json` |
+| [`recipe_stock_explainer.json`](examples/recipe_stock_explainer.json) | Stock b-roll against a voiceover, auto captions, render | `dollygrip run examples/recipe_stock_explainer.json` |
+| [`assemble_and_render.sh`](examples/assemble_and_render.sh) | A two-clip vertical timeline and render in pure curl | `bash examples/assemble_and_render.sh` |
+| [`layered_social_reel.py`](examples/layered_social_reel.py) | The layered vertical social reel DollyGrip was born from | `python examples/layered_social_reel.py` |
+| [`data_driven_titles.py`](examples/data_driven_titles.py) | One styled, animated Text+ per caption at given timecodes | `python examples/data_driven_titles.py` |
+| [`counting_cards.py`](examples/counting_cards.py) + [`counting_voice.ps1`](examples/counting_voice.ps1) | A kids' counting video from API-built Fusion cards plus an offline Windows TTS voiceover | `powershell -File examples/counting_voice.ps1 -OutDir D:\counting\voice` then `python examples/counting_cards.py` |
+| [`count_with_me/`](examples/count_with_me/) | A music video for a real song: word-timed cards in one Fusion comp | see its [README](examples/count_with_me/README.md) |
+| [`abc_song/`](examples/abc_song/) | Stock clip per letter on V1, flash-card overlay comp on a carrier on V2 | see its [README](examples/abc_song/README.md) |
+| [`abc_song/v2/`](examples/abc_song/v2/) | The maximum-motion cut of the ABC song: Ken Burns, pops, wipes, SFX stems | `python examples/abc_song/v2/build_v2.py` then `finalize_v2.py` |
+
 ### Or as one recipe
 
 The same pipeline as a single call - each step is any operation by name, and later steps can reference earlier results:
@@ -102,7 +117,7 @@ dollygrip run examples/recipe_reel.json
 ]}
 ```
 
-`dry_run: true` returns the resolved plan without touching Resolve; the `run` MCP tool exposes the same thing to agents, so Claude can plan a whole edit and execute it in one call.
+`dry_run: true` returns the resolved plan without touching Resolve (op names, argument names and templates are checked offline; `dollygrip run file.json --dry-run` does the same). A recipe may carry an `inputs` block that steps reference as `{{ inputs.<key> }}`, overridable with `--input key=value`; the `run` MCP tool exposes the same thing to agents, so Claude can plan a whole edit and execute it in one call.
 
 ## Making it look good
 
@@ -130,6 +145,8 @@ What happens, step by step (each is also its own endpoint so you can intervene):
 1. `POST /stock/search` - per keyword, the provider is queried with the aspect; results are filtered by orientation, minimum duration and the rendition whose short side reaches 1080; searches are cached for 24 h and API keys rotate.
 2. `POST /stock/plan` - clips are cut into segments of at most `max_clip_duration`; `script_order` round-robins through the keywords so the footage follows the script, `random` shuffles; the longest segment of every source comes before any source repeats; the list loops until the voiceover (plus 0.1 s) is covered and the last shot is trimmed to the end. Chosen clips are downloaded with a JSON source record (provider, author, page URL) for attribution.
 3. `POST /stock/assemble` - files are imported once into the bin, each shot is appended at its record frame with the source range converted using the clip's OWN fps (the source-fps trap), `fit: fill` sets Resolve's Scaling to Fill (cover) or `fit` to letterbox, and the voiceover is placed on the audio track. Resolve's own clock measures the voiceover when you pass a path.
+
+**No keywords yet? Give it the script.** `POST /stock/keywords` turns voiceover text into search terms (1-3 concrete, visual terms per sentence plus a global list in script order), and `POST /stock/b-roll` accepts `script` in place of `terms` and does the same step first (the derived terms come back under `keywords`). It runs an offline heuristic by default. Set `DOLLYGRIP_KEYWORDS_PROVIDER` to `anthropic`, `openai` or `deepseek` with the matching `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` to have an LLM pick the terms (`DOLLYGRIP_KEYWORDS_MODEL` overrides the default model); any provider failure falls back to the heuristic and the response says so in `provider_used` and `fallback_reason`.
 
 Add captions with `POST /timelines/current/subtitles/auto` (Studio) or per-line Text+ titles, then `add_job`. Pexels and Pixabay content is free to use; keep the `attribution` list the plan returns if you publish.
 
@@ -236,7 +253,7 @@ Things the Resolve API itself does not expose (so neither can any agent): buildi
 | Color | versions · CDL · copy grades · LUT export · node graphs (clip / timeline / group pre+post: LUT, cache, enable, DRX, reset) · color groups · gallery albums & stills (import/export/label/delete) · export frame · keyframe mode |
 | Fusion | comps (list/add/import/rename/load/export/delete) · comp **attrs** (time, render/global range, HiQ, motion blur) · undo grouping · save to `.comp` · **templates** + **fonts** discovery (Effects Library titles/generators/effects/transitions and Fusion-page presets, from folders and `.drfx` bundles) · tools (list with `?type=`/add/get/rename/bypass/delete, lock, tile colour, node position) · **node graph** (nodes, edges, positions) · **paste** templates / macros / `.setting` files with per-tool input overrides · **duplicate** tool · tool **presets** (save/load `.setting`) · **input discovery** (every parameter of any tool or template with control type, range, default, value) · set inputs · **expressions** · connect · **keyframes** (set, read back, clear) · **modifiers** (Shake, Path/XYPath, Calculation, Offset, Expression, Probe, KeyStretcher) · `text-plus` helper (plus shadow, outline, tracking, line spacing) · current comp on the Fusion page |
 | Render | formats/codecs/resolutions · presets (list/load/save/delete/import/export) · queue (add with preset/format/mode/settings, list, delete) · start/stop · **wait** · **progress as server-sent events** · quick export · burn-in presets |
-| Stock | `GET /stock/providers` · `POST /stock/search` · `POST /stock/download` · `POST /stock/plan` · `POST /stock/assemble` · **`POST /stock/b-roll`** (keywords + voiceover -> stitched timeline in one call) |
+| Stock | `GET /stock/providers` · `POST /stock/search` · `POST /stock/download` · `POST /stock/plan` · `POST /stock/assemble` · **`POST /stock/b-roll`** (keywords or script + voiceover -> stitched timeline in one call) · `POST /stock/keywords` (script -> search terms) |
 | Recipes | `POST /recipes/run` - a whole pipeline as ordered steps with `{{ steps.name.path }}` templating, dry-run, stop-on-error · `GET /recipes/operations` · `dollygrip run recipe.json` |
 | Tools | `tools/timecode` (frames ⇄ timecode, drop-frame aware) |
 | Escape hatch | `POST /exec` (requires `--allow-exec`) - namespace: `resolve, fusion, project_manager, project, media_pool, media_storage, timeline, gallery` |
