@@ -34,3 +34,28 @@ waving at the finale, and a "Thanks for watching!" card.
 - **Captions from the lyrics, not the transcript**, timed by anchor words walked
   in song order with a per-line lead (about 1 s for letter lines: the letter is
   sung a second before its word).
+
+## v2 - the maximum-motion cut (`v2/`)
+
+Same footage and timing, but everything moves, and the audio is produced:
+
+- `v2/timing.py` - exports `timing.json` (anchors, windows, chorus tokens, captions, beat)
+  from `words.json` so the comp builder and the audio pass share one clock.
+- `v2/build_v2.py` - Ken Burns on all 26 clips (a Transform in each clip's own comp),
+  flash cards that slide in with overshoot (white frame + pastel panel), big letters with
+  cycling squash-pop / spin-in / drop-and-bounce entrances, a bump on the sung word and a
+  continuous wiggle, spinning lowercase, words that slide in with a tilt, six shared burst
+  stars firing on every sung letter (all 41 bursts in one keyframe list per star), two swipe
+  rectangles for 23 letter changes, an alphabet progress row, candy stripes, confetti rain,
+  rising notes, hopping chorus letters, pulsing grids, orbiting stars on the thanks card.
+  341 tools, ~2,600 API calls, about 7 minutes.
+- `v2/make_sfx.py` - deterministic numpy sound effects at the timing.json events (pops,
+  boings, whooshes, sparkles, swipes, claps, xylophone dings, tada arpeggios, confetti
+  shimmer); the song is mastered with two-pass loudnorm (-14 LUFS, -1.5 dBTP), ducked
+  under the two Windows-TTS voice lines; see `v2/AUDIO_NOTES.md`.
+- `v2/finalize_v2.py` - stems onto A1-A3, render, frame grabs and level check.
+
+Lessons that went into the gateway while building it (all in `docs/GOTCHAS.md`): point
+inputs need an XYPath (the keyframe endpoint does it now), translucent Backgrounds must
+be premultiplied, `time` in expressions is in frames, frame exports need the Color page
+and a settle after moving the playhead, and never read a modifier-driven input.

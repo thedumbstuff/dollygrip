@@ -5,7 +5,7 @@ against a real Resolve, what is pending, what was decided and why, and what
 development is required next. Update it in the same commit as the change it
 describes. Agents get it as the MCP resource `dollygrip://watchtower`.
 
-_Last updated: 2026-09-24 · version 0.5.0 · 43 commits (8 ahead of GitHub) · 164 tests green ·
+_Last updated: 2026-09-25 · version 0.5.0 · 47 commits (12 ahead of GitHub) · 164 tests green ·
 333 operations · verified on DaVinci Resolve Studio 21.0.4.5 (Windows 11)_
 
 ---
@@ -20,7 +20,7 @@ _Last updated: 2026-09-24 · version 0.5.0 · 43 commits (8 ahead of GitHub) · 
 | Test suite | 164 pytest cases against `tests/fake_resolve.py` (the contract); no Resolve needed |
 | Agent integration | `dollygrip mcp` (stdio, mcp 1.x and 2.x), profiles, resources; README CLAUDE.md snippet for plain HTTP |
 | Production guide | `docs/VIDEO_CRAFT.md` - agents must read it before building a video |
-| Real deliverables produced | "Counting 1 to 10" (16:9 + 9:16 + SRT), "Count With Me!" music video (2:43), "The ABC Song" (2:40, 26 stock clips + flash-card overlay) |
+| Real deliverables produced | "Counting 1 to 10" (16:9 + 9:16 + SRT), "Count With Me!" music video (2:43), "The ABC Song" (2:40, 26 stock clips + flash-card overlay), "The ABC Song v2" (maximum-motion cut with produced audio) |
 | Published | github.com/thedumbstuff/dollygrip (Apache-2.0); 8 commits ahead of `origin/main`, push is the user's call |
 
 ## 2. Functionality available
@@ -63,7 +63,7 @@ Ordered by value to the standing goal ("Claude can do everything a human can in 
 | P13 | **Perturb / Follower modifiers** - no scripting constructor on Resolve 21 | organic wobble and per-character text animation without hand-built splines | S - paste a modifier `.setting` via the Lua paste path, then connect |
 | P14 | **Fusion live sequence in the release gate** - the paste / read / markers / history run (`live_fusion5.py`, scratchpad) | four freezes today were only caught live | S - fold into `scripts/live_smoke.py` |
 
-Closed today: P1 (stock providers live, 2026-09-24), P5 (Fusion macro import with overrides, 2026-09-24). Dropped by decision: cloud projects (see §4).
+Closed 2026-09-24: P1 (stock providers live), P5 (Fusion macro import with overrides). Open follow-ups from the ABC v2 build: swap the Q (queen) clip for a child-friendly one, a render wait longer than 58 min for heavy comps (`/render/jobs/{id}/wait` caps at 3600 s per call; poll again). Dropped by decision: cloud projects (see §4).
 
 ## 4. Decisions made
 
@@ -95,6 +95,9 @@ Closed today: P1 (stock providers live, 2026-09-24), P5 (Fusion macro import wit
 | 2026-09-24 | **Work runs in parallel agents** for everything that does not touch Resolve (docs sync, fake-first endpoints); live probing stays one serial lane | user asked "why only one worker?"; Resolve is one instance behind one lock, but docs and fake-backed code are not |
 | 2026-09-24 | **Tests never touch machine-wide caches** (`DOLLYGRIP_TEMPLATE_CACHE` per test) | a pytest run put fake JSON where the live gateway extracts templates; `bmd.readfile` returned nil and pastes went silent for an hour |
 | 2026-09-24 | **Freezes are bisected with per-step `/exec` calls and 20 s client timeouts**, never one long request | each hard freeze costs a Resolve restart (about 90 s to scripting); naming the step on the first try is the only affordable way |
+| 2026-09-25 | **Point inputs animate through an XYPath** in the keyframes endpoint; `[x, y]` values switch mode automatically | a BezierSpline attach on Center is a silent static write - v1's word slide-in never moved and v2's panels parked off-screen until this was found |
+| 2026-09-25 | **Frame QA before every render**: `export-frame` with `timecode` (Color page, 0.7 s settle) at a dozen moments, viewed as images | the Edit page exports black and an immediate export returns the previous position; three real defects were only visible in stills |
+| 2026-09-25 | Audio for a production is a **separate agent's job** from a shared `timing.json` (mastered song, synthesized SFX, TTS voice) while the comp builds | the Fusion build is serial on Resolve; audio is not |
 
 ## 5. Development required
 
@@ -142,6 +145,7 @@ first); comp markers are keyed by the table's own `time`.
 | 2026-09-16 | Counting 1 to 10 - 16:9 and 9:16, SRT sidecars, metadata | `C:/Users/shwet/Videos/DollyGrip/` | 12 Fusion title cards built via the API (background, animated digit, word, stars, caption), SAPI voice, synthesized bed and pops; `examples/counting_cards.py` |
 | 2026-09-22 | Count With Me! - 2:43 music video for a real song, metadata | same folder | one Fusion comp on a carrier clip, ~160 Blend-gated layers timed to Whisper word timestamps; `examples/count_with_me/` |
 | 2026-09-24 | The ABC Song - 2:40, metadata + footage credits | same folder | 26 Pexels clips placed by `/stock/assemble` on V1, transparent flash-card overlay comp on V2 (~230 layers), official lyrics as captions; `examples/abc_song/` |
+| 2026-09-25 | The ABC Song v2 - 2:40, maximum-motion cut, metadata + credits | same folder (`abc-song-v2.mp4`, 349 MB) | Ken Burns on all 26 clips, 341-tool overlay comp (sliding cards, cycling letter entrances, 41 star bursts, 23 swipe wipes, progress row, stripes, confetti, notes, hopping chorus), song mastered to -14 LUFS + numpy SFX stem + TTS voice, ducked; `examples/abc_song/v2/` |
 
 ## 8. How to keep this page honest
 
