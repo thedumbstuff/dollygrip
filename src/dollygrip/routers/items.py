@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query
 
 from ..bridge import NotFound, Rejected, ResolveBridge, require
 from ..deps import resolve_session
-from ..schemas import AddTake, CacheSettings, Flag, ItemProperties, MagicMask, NamedPreset, PatchItem, RelocateItem, SplitItem, TrackType, VoiceIsolation
+from ..schemas import AddTake, CacheSettings, Flag, ItemProperties, MagicMask, NamedPreset, DissolveItem, PatchItem, RelocateItem, RetimeItem, SplitItem, TrackType, VoiceIsolation
 from ..serialize import item_summary, jsonable, safe
 from .markers import mount_markers
 
@@ -286,6 +286,310 @@ def split_item(item_id: str, body: SplitItem, bridge: ResolveBridge = Depends(re
 
 
 # -- takes -----------------------------------------------------------------
+
+
+# -- retime (composite: the API has RetimeProcess but no speed setter) -----------------
+
+RETIME_TOOL = "DollyGripRetime"
+
+
+def _shift_after(bridge: ResolveBridge, tl, from_rel: int, delta: int, exclude_id: str) -> list:
+    """Move every media-backed item that starts at/after `from_rel` by `delta`
+    frames (right-to-left when pushing, left-to-right when pulling)."""
+    start_abs = int(tl.GetStartFrame())
+    affected = []
+    for tt, idx, item in bridge.iter_items(tl):
+        if tt == "subtitle" or safe(item.GetUniqueId) == exclude_id:
+            continue
+        rel = int(item.GetStart()) - start_abs
+        if rel >= from_rel and safe(item.GetMediaPoolItem) is not None:
+            affected.append((rel, item))
+    moved = []
+    for rel, item in sorted(affected, key=lambda x: -x[0] if delta > 0 else x[0]):
+        r = relocate_one(bridge, tl, item, rel + delta)
+        moved.append({"id": r["item"]["id"], "start_rel": r["item"]["start_rel"]})
+    return moved
+
+
+def _insert_timespeed(bridge: ResolveBridge, item, speed: float, delay: float, interpolate: bool, hold_first: int, hold_last: int) -> dict:
+    """Put (or update) a TimeSpeed between MediaIn and whatever it fed in the
+    item's first Fusion comp; creates the comp when there is none."""
+    from .fusion import _tool, _tools
+    from .fusion_more import graph_of
+
+    if int(item.GetFusionCompCount() or 0) == 0:
+        require(item.AddFusionComp(), "Resolve could not add a Fusion composition to the item")
+    comp = bridge.fusion_comp(item, None)
+    tools = _tools(comp)
+    by_id = {}
+    for t in tools:
+        attrs = safe(t.GetAttrs, default={}) or {}
+        by_id.setdefault(attrs.get("TOOLS_RegID"), []).append(attrs.get("TOOLS_Name"))
+    media_in = (by_id.get("MediaIn") or [None])[0]
+    if media_in is None:
+        raise Rejected("The item's Fusion comp has no MediaIn tool")
+    existing = safe(comp.FindTool, RETIME_TOOL)
+    if existing is None:
+        graph = graph_of(comp)
+        consumers = [e for e in graph["edges"] if e["from"] == media_in]
+        ts = comp.AddTool("TimeSpeed", -32768, -32768)
+        require(ts, "Fusion refused to add a TimeSpeed tool")
+        ts.SetAttrs({"TOOLS_Name": RETIME_TOOL})
+        ts = _tool(comp, RETIME_TOOL)
+        ts.ConnectInput("Input", _tool(comp, media_in))
+        if not consumers and by_id.get("MediaOut"):
+            consumers = [{"to": by_id["MediaOut"][0], "input": "Input"}]
+        for e in consumers:
+            _tool(comp, e["to"]).ConnectInput(e["input"], ts)
+        created = True
+    else:
+        ts = existing
+        created = False
+    ts.SetInput("Speed", float(speed))
+    ts.SetInput("Delay", float(delay))
+    ts.SetInput("InterpolateBetweenFrames", 1 if interpolate else 0)
+    mi = _tool(comp, media_in)
+    safe(mi.SetInput, "HoldFirstFrame", int(hold_first))
+    safe(mi.SetInput, "HoldLastFrame", int(hold_last))
+    return {"comp": safe(lambda: comp.GetAttrs().get("COMPS_Name")) or "1", "tool": RETIME_TOOL, "created": created, "media_in": media_in}
+
+
+@router.post("/{item_id}/retime")
+def retime_item(item_id: str, body: RetimeItem, bridge: ResolveBridge = Depends(resolve_session)):
+    """Change an item's playback speed - the Edit page's Change Clip Speed,
+    which the scripting API lacks (it exposes RetimeProcess only). Composite:
+    a TimeSpeed tool goes into the item's Fusion comp right after MediaIn.
+
+    Live facts it is built on (Resolve Studio 21.0.4): the comp's MediaIn spans
+    the WHOLE source clip (GlobalIn = -in_point, GlobalOut = clip_end), so the
+    speed change can reach frames beyond the item's trim; and TimeSpeed maps
+    input_time = P + (t - GlobalStart - Delay) * Speed with P = GlobalStart for
+    forward speeds and P = GlobalEnd + 1 for reverse, so Delay is solved here
+    to make comp frame 0 play the item's own in point (or, in reverse, its
+    last frame).
+
+    `fit` keeps the item where it is and as long as it is: 0.5 shows the first
+    half of the trimmed range in slow motion, 2 needs twice the source after
+    the in point (held on the last frame when the clip ends). `ripple`
+    rebuilds the item at duration / |speed| (source window extended after the
+    in point, or shifted earlier when the clip has no tail) and pushes or
+    pulls every later item, like a ripple trim. Linked audio is not retimed."""
+    if body.speed == 0:
+        raise Rejected("speed must not be 0 (use a freeze frame via the comp instead)")
+    tl = bridge.current_timeline()
+    item = bridge.item(item_id, tl)
+    snap = _snapshot(bridge, item, tl)
+    if snap["mpi"] is None:
+        raise Rejected("Only media-backed items can be retimed (generators/titles have no source)")
+    duration = int(item.GetDuration())
+    src_in, src_out = snap["source_start"], snap["source_end"]
+    if duration <= 0 or src_in is None or src_out is None:
+        raise Rejected("Could not read the item's duration / source range")
+    ratio = max((src_out - src_in) / duration, 1e-6)  # source frames per timeline frame
+    clip_frames = int(float(safe(snap["mpi"].GetClipProperty, "Frames") or 0) or 0)
+    speed = float(body.speed)
+    s_abs = abs(speed)
+    moved = []
+    new_item = item
+    win_in_src = src_in  # source in-point of the (possibly rebuilt) item
+    if body.mode == "ripple":
+        new_len = max(1, int(round(duration / s_abs)))
+        need_src = int(round(new_len * ratio))
+        if clip_frames and src_in + need_src > clip_frames:
+            win_in_src = max(0, clip_frames - need_src)  # no tail: slide the window earlier
+            if win_in_src + need_src > clip_frames:
+                raise Rejected(f"The clip has only {clip_frames} source frames; a {new_len}-frame item at speed {speed} needs {need_src}")
+        delta = new_len - duration
+        old_end_rel = snap["record_rel"] + duration
+        if delta > 0:
+            moved = _shift_after(bridge, tl, old_end_rel, delta, item_id)
+        r = relocate_one(bridge, tl, item, snap["record_rel"], None, win_in_src, win_in_src + need_src)
+        new_item = bridge.item(r["item"]["id"], tl)
+        if delta < 0:
+            moved = _shift_after(bridge, tl, old_end_rel, delta, r["item"]["id"])
+        duration_after = new_len
+    else:
+        duration_after = duration
+    # comp geometry in timeline frames (what the comp's time axis uses)
+    gs = -win_in_src / ratio  # GlobalStart
+    ge = ((clip_frames - win_in_src) / ratio - 1) if clip_frames else (duration_after - 1)  # GlobalEnd
+    orig_offset = (src_in - win_in_src) / ratio  # where the original in point sits in the new comp
+    if speed > 0:
+        pivot, r0 = gs, orig_offset
+        needed = orig_offset + duration_after * s_abs
+        available = ge + 1
+        hold_last = int(round(max(0.0, needed - available) * ratio)) if body.hold_edges else 0
+        hold_first = 0
+    else:
+        pivot, r0 = ge + 1, orig_offset + duration - 1  # reverse: start on the original last frame
+        needed_back = duration_after * s_abs - duration  # frames before the original in point
+        hold_first = int(round(max(0.0, needed_back - orig_offset - (-gs)) * ratio)) if body.hold_edges else 0
+        hold_last = 0
+    delay = -gs - (r0 - pivot) / speed
+    if body.hold_edges:
+        # interpolation samples one frame past the range at the edges: the reverse item's last
+        # frame rendered black (live) until MediaIn held its first frame
+        if speed < 0:
+            hold_first = max(hold_first, 1)
+        else:
+            hold_last = max(hold_last, 1)
+    comp_info = _insert_timespeed(bridge, new_item, speed, delay, body.interpolate, hold_first, hold_last)
+    return {
+        "ok": True,
+        "item": _summary(bridge, new_item, tl),
+        "speed": speed,
+        "mode": body.mode,
+        "duration_before": duration,
+        "duration_after": duration_after,
+        "delay": round(delay, 3),
+        "source_window": [win_in_src, win_in_src + int(round(duration_after * ratio))] if body.mode == "ripple" else [src_in, src_out],
+        "holds": {"first": hold_first, "last": hold_last},
+        "moved": moved,
+        **comp_info,
+    }
+
+
+# -- cross dissolve (composite: the API has no transitions) ----------------------------
+
+FADE_MERGE, FADE_BG = "DollyGripFade", "DollyGripFadeBG"
+
+
+def _fade_comp(bridge: ResolveBridge, item, fade_in: int = 0, fade_out: int = 0) -> dict:
+    """Ramp the item's opacity inside its Fusion comp: a transparent Background
+    merged under whatever fed MediaOut, Blend keyed 0->1 over the first
+    `fade_in` frames and 1->0 over the last `fade_out`."""
+    from .fusion import _tool, _tools, animate_input
+    from .fusion_more import graph_of
+
+    if int(item.GetFusionCompCount() or 0) == 0:
+        require(item.AddFusionComp(), "Resolve could not add a Fusion composition to the item")
+    comp = bridge.fusion_comp(item, None)
+    by_id = {}
+    for t in _tools(comp):
+        attrs = safe(t.GetAttrs, default={}) or {}
+        by_id.setdefault(attrs.get("TOOLS_RegID"), []).append(attrs.get("TOOLS_Name"))
+    media_out = (by_id.get("MediaOut") or [None])[0]
+    if media_out is None:
+        raise Rejected("The item's Fusion comp has no MediaOut tool")
+    if safe(comp.FindTool, FADE_MERGE) is None:
+        feeding = [e["from"] for e in graph_of(comp)["edges"] if e["to"] == media_out and e["input"] == "Input"]
+        source = feeding[0] if feeding else (by_id.get("MediaIn") or [None])[0]
+        if source is None:
+            raise Rejected("Nothing feeds MediaOut in the item's comp")
+        bg = comp.AddTool("Background", -32768, -32768)
+        require(bg, "Fusion refused to add a Background")
+        bg.SetAttrs({"TOOLS_Name": FADE_BG})
+        bg = _tool(comp, FADE_BG)
+        for k, v in (("UseFrameFormatSettings", 1), ("TopLeftRed", 0.0), ("TopLeftGreen", 0.0), ("TopLeftBlue", 0.0), ("TopLeftAlpha", 0.0)):
+            safe(bg.SetInput, k, v)
+        m = comp.AddTool("Merge", -32768, -32768)
+        require(m, "Fusion refused to add a Merge")
+        m.SetAttrs({"TOOLS_Name": FADE_MERGE})
+        m = _tool(comp, FADE_MERGE)
+        m.ConnectInput("Background", bg)
+        m.ConnectInput("Foreground", _tool(comp, source))
+        _tool(comp, media_out).ConnectInput("Input", m)
+    m = _tool(comp, FADE_MERGE)
+    total = int(item.GetDuration())
+    keys = {}
+    if fade_in > 0:
+        keys.update({0: 0.0, min(fade_in, total) - 1: 1.0})
+    if fade_out > 0:
+        keys.update({max(total - fade_out, 0): 1.0, total - 1: 0.0})
+    if keys:
+        animate_input(comp, m, "Blend", keys, True)
+    return {"tool": FADE_MERGE, "keys": {str(k): v for k, v in keys.items()}}
+
+
+def _next_on_track(bridge: ResolveBridge, tl, item):
+    tt, idx = safe(item.GetTrackTypeAndIndex, default=[None, None]) or [None, None]
+    end = int(item.GetEnd())
+    following = [it for it2, idx2, it in bridge.iter_items(tl, tt, idx) if int(it.GetStart()) >= end]
+    following.sort(key=lambda it: int(it.GetStart()))
+    return following[0] if following else None
+
+
+def _free_track(bridge: ResolveBridge, tl, above: int, start_abs: int, end_abs: int, wanted: Optional[int]) -> int:
+    """A video track (index) with nothing in [start_abs, end_abs); adds one when needed."""
+    count = int(tl.GetTrackCount("video") or 0)
+    candidates = [wanted] if wanted else list(range(above + 1, count + 1)) + [count + 1]
+    for idx in candidates:
+        if idx > count:
+            require(tl.AddTrack("video"), "Resolve refused to add a video track")
+            count += 1
+        busy = any(int(it.GetStart()) < end_abs and int(it.GetEnd()) > start_abs for _, _, it in bridge.iter_items(tl, "video", idx))
+        if not busy:
+            return idx
+    raise Rejected(f"Track V{wanted} is occupied in the dissolve range")
+
+
+@router.post("/{item_id}/dissolve")
+def dissolve_item(item_id: str, body: DissolveItem, bridge: ResolveBridge = Depends(resolve_session)):
+    """Cross-dissolve from this item into the next one - the Edit page
+    transition the API lacks. Composite on two tracks: with `before_cut` the
+    incoming item is re-created one track up, starting `frames` early from
+    its head handles, with a Fusion comp that ramps its opacity 0 -> 1 up to
+    the cut; with `after_cut` a `frames`-long tail piece of the outgoing clip
+    (its handles past the out point) is placed one track up over the incoming
+    item and fades 1 -> 0. `center` does half of each; `auto` picks by the
+    handles available. Grades and comps travel with the moved item (see
+    relocate). Audio is untouched (no crossfade)."""
+    tl = bridge.current_timeline()
+    a = bridge.item(item_id, tl)
+    b = bridge.item(body.to, tl) if body.to else _next_on_track(bridge, tl, a)
+    if b is None:
+        raise NotFound("No item follows this one on its track (pass `to`)")
+    tt, idx = safe(a.GetTrackTypeAndIndex, default=[None, None]) or [None, None]
+    if tt != "video":
+        raise Rejected("Dissolves are for video items")
+    if int(b.GetStart()) != int(a.GetEnd()):
+        raise Rejected(f"The items are not adjacent (A ends at {int(a.GetEnd())}, B starts at {int(b.GetStart())})")
+    snap_a, snap_b = _snapshot(bridge, a, tl), _snapshot(bridge, b, tl)
+    if snap_a["mpi"] is None or snap_b["mpi"] is None:
+        raise Rejected("Both items must be media-backed (generators/titles have no handles)")
+    ratio_a = max((snap_a["source_end"] - snap_a["source_start"]) / max(int(a.GetDuration()), 1), 1e-6)
+    ratio_b = max((snap_b["source_end"] - snap_b["source_start"]) / max(int(b.GetDuration()), 1), 1e-6)
+    frames_a = int(float(safe(snap_a["mpi"].GetClipProperty, "Frames") or 0) or 0)
+    head_b = int(snap_b["source_start"] / ratio_b)  # timeline frames of handle before B's in point
+    tail_a = int((frames_a - snap_a["source_end"]) / ratio_a) if frames_a else 0
+    n = body.frames
+    align = body.align
+    if align == "auto":
+        if head_b >= n:
+            align = "before_cut"
+        elif tail_a >= n:
+            align = "after_cut"
+        elif head_b + tail_a >= n:
+            align = "center"
+        else:
+            raise Rejected(f"Not enough handles for a {n}-frame dissolve: B has {head_b} before its in point, A has {tail_a} after its out point")
+    need_b = {"before_cut": n, "after_cut": 0, "center": n // 2}[align]
+    need_a = {"before_cut": 0, "after_cut": n, "center": n - n // 2}[align]
+    if need_b > head_b or need_a > tail_a:
+        raise Rejected(f"{align} needs {need_b} head frames on B (has {head_b}) and {need_a} tail frames on A (has {tail_a})")
+    start_abs = int(tl.GetStartFrame())
+    cut_abs = int(a.GetEnd())
+    result = {"ok": True, "align": align, "frames": n, "cut_rel": cut_abs - start_abs, "pieces": []}
+    if need_b:
+        track = _free_track(bridge, tl, idx, cut_abs - need_b, int(b.GetEnd()), body.track_index)
+        r = relocate_one(bridge, tl, b, snap_b["record_rel"] - need_b, track, int(round(snap_b["source_start"] - need_b * ratio_b)), snap_b["source_end"])
+        b_new = bridge.item(r["item"]["id"], tl)
+        fade = _fade_comp(bridge, b_new, fade_in=need_b)
+        result["pieces"].append({"role": "incoming", "item": r["item"], "track_index": track, "fade_in": need_b, "grade_copied": r["grade_copied"], **fade})
+        result["incoming"] = r["item"]["id"]
+    if need_a:
+        track = _free_track(bridge, tl, idx, cut_abs, cut_abs + need_a, body.track_index)
+        info = {"mediaPoolItem": snap_a["mpi"], "trackIndex": track, "recordFrame": cut_abs, "startFrame": snap_a["source_end"], "endFrame": int(round(snap_a["source_end"] + need_a * ratio_a)), "mediaType": 1}
+        created = bridge.media_pool().AppendToTimeline([info])
+        piece = created[0] if created else None
+        if not piece:
+            raise Rejected("Resolve refused to append the outgoing clip's tail piece")
+        if snap_a["properties"]:
+            safe(piece.SetProperty, dict(snap_a["properties"]))
+        grade = bool(safe(a.CopyGrades, [piece]))
+        fade = _fade_comp(bridge, piece, fade_out=need_a)
+        result["pieces"].append({"role": "outgoing_tail", "item": _summary(bridge, piece, tl), "track_index": track, "fade_out": need_a, "grade_copied": grade, **fade})
+    return result
 
 
 @router.get("/{item_id}/takes")

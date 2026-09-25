@@ -447,6 +447,20 @@ class RippleInsert(AppendItem):
     all_tracks: bool = Field(default=True, description="Shift items on every track (false = only the target track)")
 
 
+class RetimeItem(BaseModel):
+    speed: float = Field(description="Playback speed: 0.5 = half speed, 2 = double, -1 = reverse (not 0)")
+    mode: Literal["fit", "ripple"] = Field(default="fit", description="fit: keep the item's duration and play `speed` x as much source from the in point; ripple: change the duration to duration/|speed| and push or pull everything after the item")
+    interpolate: bool = Field(default=True, description="Blend between source frames on non-integer steps (TimeSpeed InterpolateBetweenFrames)")
+    hold_edges: bool = Field(default=True, description="When the source runs out, hold the last (or first) frame instead of going black")
+
+
+class DissolveItem(BaseModel):
+    to: Optional[str] = Field(default=None, description="The incoming item (default: the next item on the same track)")
+    frames: int = Field(default=15, ge=2, le=600, description="Dissolve length in timeline frames")
+    align: Literal["auto", "before_cut", "after_cut", "center"] = Field(default="auto", description="before_cut: the incoming clip starts early (needs head handles); after_cut: a tail piece of the outgoing clip fades out over the incoming one (needs tail handles); center: half each; auto picks what the handles allow")
+    track_index: Optional[int] = Field(default=None, ge=1, description="Video track for the overlapping piece (default: the next track up, created if needed)")
+
+
 class SplitItem(BaseModel):
     frame: int = Field(description="Timeline frame to cut at, 0-based from the timeline start (must fall inside the item)")
 
@@ -762,6 +776,16 @@ class ExecCode(BaseModel):
         "and a `result` variable you can assign for a structured return."
     )
 
+
+
+class KeywordsRequest(BaseModel):
+    text: str = Field(description="Script / voiceover text to turn into stock-search terms")
+    max_terms: int = Field(default=8, ge=1, le=50, description="Size of the global term list")
+    per_segment: bool = Field(default=True, description="Split into sentences and pick 1-3 terms per segment (False = one segment)")
+    provider: Optional[Literal["heuristic", "anthropic", "openai", "deepseek"]] = Field(
+        default=None,
+        description="None = env DOLLYGRIP_KEYWORDS_PROVIDER (unset = heuristic). LLM providers need their *_API_KEY; any failure falls back to the heuristic.",
+    )
 
 StoragePaths.model_rebuild()
 ImportMedia.model_rebuild()

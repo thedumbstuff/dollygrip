@@ -147,3 +147,87 @@ def test_relocate_with_linked_audio(client, timeline):
     assert body["item"]["start_rel"] == 300 and len(body["linked_items"]) == 1
     assert body["linked_items"][0]["track_type"] == "audio" and body["linked_items"][0]["start_rel"] == 300
     assert not any(it.GetStart() == 108050 for it in timeline._all_items())
+
+
+def test_retime_fit_inserts_timespeed(client, timeline):
+    iid = item_ids(client, "video")[0]  # 240 frames at 0
+    r = client.post(f"{ITEMS}/{iid}/retime", json={"speed": 0.5})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["mode"] == "fit" and body["duration_after"] == 240 and body["created"] is True and body["holds"] == {"first": 0, "last": 1}
+    item = timeline.tracks["video"][0]["items"][0]
+    comp = item.comps[0]
+    ts = comp.tools["DollyGripRetime"]
+    assert ts.reg_id == "TimeSpeed" and ts.inputs["Speed"] == 0.5 and ts.inputs["InterpolateBetweenFrames"] == 1
+    # inserted between MediaIn and MediaOut
+    assert ts.connections["Input"] == "MediaIn1" and comp.tools["MediaOut1"].connections["Input"] == "DollyGripRetime"
+    # delay solves comp frame 0 -> the item's in point: in * (1 - 1/speed) with in = source_start
+    assert abs(body["delay"] - (item.source_start * (1 - 1 / 0.5))) < 1e-6
+    # second call updates in place
+    r2 = client.post(f"{ITEMS}/{iid}/retime", json={"speed": 2.0, "interpolate": False})
+    assert r2.status_code == 200 and r2.json()["created"] is False and ts.inputs["Speed"] == 2.0 and ts.inputs["InterpolateBetweenFrames"] == 0
+    assert r2.json()["holds"]["last"] > 0  # 2x needs 480 frames after the in point; the fake clip is shorter
+
+
+def test_retime_ripple_changes_length_and_shifts(client, timeline):
+    ids = item_ids(client, "video")
+    first = timeline.tracks["video"][0]["items"][0]
+    dur, start_rel = first.duration, 0
+    r = client.post(f"{ITEMS}/{ids[0]}/retime", json={"speed": 2.0, "mode": "ripple"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["duration_after"] == dur // 2 and body["item"]["duration"] == dur // 2 and body["item"]["start_rel"] == start_rel
+    assert body["source_window"] == [first.source_start, first.source_start + dur // 2]
+    assert "DollyGripRetime" in timeline.tracks["video"][0]["items"][0].comps[0].tools
+
+
+def test_retime_rejects(client):
+    iid = item_ids(client, "video")[0]
+    assert client.post(f"{ITEMS}/{iid}/retime", json={"speed": 0}).status_code == 422
+    tid = client.post(f"{V1}/timelines/current/generators", json={"kind": "generator", "name": "Solid Color"}).json()["item_id"]
+    assert client.post(f"{ITEMS}/{tid}/retime", json={"speed": 0.5}).status_code == 422
+    assert client.post(f"{ITEMS}/nope/retime", json={"speed": 0.5}).status_code == 404
+
+
+def test_dissolve_before_cut_moves_incoming_up_with_fade(client, timeline):
+    ids = item_ids(client, "video")
+    a = timeline.tracks["video"][0]["items"][0]  # 0..240 on V1
+    # make B adjacent on V1 with 30 frames of head handle
+    r = client.post(f"{V1}/timelines/current/append", json={"items": [{"clip_name": "spokes.mp4", "track_index": 1, "record_frame": 240, "start_frame": 30, "end_frame": 90, "media_type": "video"}]})
+    assert r.json()["all_ok"], r.text
+    r = client.post(f"{ITEMS}/{ids[0]}/dissolve", json={"frames": 20})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["align"] == "before_cut" and body["cut_rel"] == 240 and len(body["pieces"]) == 1
+    piece = body["pieces"][0]
+    assert piece["role"] == "incoming" and piece["item"]["start_rel"] == 220 and piece["item"]["source_start"] == 10 and piece["track_index"] >= 2
+    moved = [it for tr in timeline.tracks["video"] for it in tr["items"] if it.GetUniqueId() == body["incoming"]][0]
+    comp = moved.comps[0]
+    assert comp.tools["DollyGripFade"].connections == {"Background": "DollyGripFadeBG", "Foreground": "MediaIn1"}
+    assert comp.tools["MediaOut1"].connections["Input"] == "DollyGripFade"
+    assert comp.tools["DollyGripFade"].keyframes["Blend"] == {0: 0.0, 19: 1.0}
+    assert comp.tools["DollyGripFadeBG"].inputs["TopLeftAlpha"] == 0.0
+
+
+def test_dissolve_after_cut_adds_outgoing_tail(client, timeline):
+    # A2 = spokes 0..100 at 300 (140 frames of tail handle), B2 adjacent with NO head handle
+    r = client.post(f"{V1}/timelines/current/append", json={"items": [
+        {"clip_name": "spokes.mp4", "track_index": 1, "record_frame": 300, "start_frame": 0, "end_frame": 100, "media_type": "video"},
+        {"clip_name": "spokes.mp4", "track_index": 1, "record_frame": 400, "start_frame": 0, "end_frame": 60, "media_type": "video"}]})
+    assert r.json()["all_ok"], r.text
+    a2 = [i for i in client.get(f"{ITEMS}").json()["items"] if i["start_rel"] == 300][0]["id"]
+    r = client.post(f"{ITEMS}/{a2}/dissolve", json={"frames": 12})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["align"] == "after_cut" and body["pieces"][0]["role"] == "outgoing_tail"
+    tail = body["pieces"][0]["item"]
+    assert tail["start_rel"] == 400 and tail["duration"] == 12 and tail["source_start"] == 100 and body["pieces"][0]["fade_out"] == 12
+    assert body["pieces"][0]["keys"] == {"0": 1.0, "11": 0.0}
+
+
+def test_dissolve_rejects(client, timeline):
+    ids = item_ids(client, "video")
+    assert client.post(f"{ITEMS}/{ids[0]}/dissolve", json={"frames": 10}).status_code == 404  # nothing follows
+    client.post(f"{V1}/timelines/current/append", json={"items": [{"clip_name": "spokes.mp4", "track_index": 1, "record_frame": 300, "start_frame": 0, "end_frame": 60, "media_type": "video"}]})
+    nxt = [i for i in client.get(f"{ITEMS}").json()["items"] if i["start_rel"] == 300][0]["id"]
+    assert client.post(f"{ITEMS}/{ids[0]}/dissolve", json={"to": nxt, "frames": 10}).status_code == 422  # not adjacent

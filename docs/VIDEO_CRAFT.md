@@ -187,3 +187,21 @@ lands in this list and offer the workaround.
   masked rectangle, never a full-frame vertical gradient.
 - QA with `export_current_frame` at a dozen moments before rendering; it now
   takes a `timecode` and renders from the Color page.
+
+
+## Speed changes and dissolves (composites, 2026-09-25)
+
+- `retime_item` (`POST /timelines/current/items/{id}/retime`): `speed` 0.5 / 2 / -1,
+  `mode: fit` keeps the item's length (slow motion shows the first part of the trim,
+  fast motion runs into the clip's tail and holds its last frame), `mode: ripple`
+  changes the length to duration / |speed| and pushes or pulls everything after it.
+  Linked audio is not retimed - mute it or replace it.
+- `dissolve_item` (`POST /timelines/current/items/{id}/dissolve`): a cross dissolve
+  into the next item, built as an overlap one track up. It needs handles: head
+  handles on the incoming clip (before the cut) or tail handles on the outgoing one
+  (after the cut); stock b-roll placed with `source_in: 0` has no head handle, so
+  either trim the b-roll in by the dissolve length first or use `align: after_cut`.
+  Nothing on the original track moves, so captions and markers stay put.
+- Prove both on stills (`export_current_frame` at the cut and mid-transition):
+  the retime endpoint solves the TimeSpeed delay exactly, but a wrong-speed
+  result is invisible without checking a frame.

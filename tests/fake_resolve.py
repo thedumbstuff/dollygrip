@@ -839,6 +839,7 @@ class FakeComp:
         self.attrs = {"COMPN_RenderStart": 0, "COMPN_RenderEnd": 149, "COMPN_CurrentTime": 0, "COMPS_Name": name}
         self.AddTool("MediaIn")
         self.AddTool("MediaOut")
+        self.tools["MediaOut1"].connections["Input"] = "MediaIn1"  # Resolve wires a new clip comp this way
         if with_text:
             t = self.AddTool("TextPlus")
             t.SetAttrs({"TOOLS_Name": "Template"})

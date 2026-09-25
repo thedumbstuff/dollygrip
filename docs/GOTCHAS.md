@@ -340,3 +340,29 @@ can; the rest you need to know when you reach for `/exec` or extend the API.
   PREVIOUS position** (live: every QA still was one request late, which looked
   like wrong keyframes). The viewer needs a moment; `export-frame` now settles
   0.7 s after moving the playhead (`settle`).
+
+## Retime through Fusion (live on Resolve Studio 21.0.4, 2026-09-25)
+
+- **The scripting API has no speed setter** (`RetimeProcess` is only the
+  interpolation quality), but a clip's Fusion comp sees the WHOLE source
+  clip: `MediaIn` reports `GlobalIn = -in_point` and `GlobalOut = clip_end`
+  (a 120-frame trim starting at source 60 of a 360-frame clip gave -60 / 299).
+  So a `TimeSpeed` inside the comp can reach frames beyond the trim.
+- **TimeSpeed pivots on the comp's global range, not the item's in point.**
+  Measured with a frame-numbered clip: `input(t) = P + (t - GlobalStart -
+  Delay) * Speed`, with `P = GlobalStart` for positive speeds and `P =
+  GlobalEnd + 1` for negative ones (Delay is subtracted before scaling). At
+  0.5x with no Delay the item started 60 frames EARLY. `POST
+  .../items/{id}/retime` solves Delay so frame 0 plays the in point (or the
+  last frame in reverse) - `delay = -GlobalStart - (r0 - P) / speed`.
+- Running past the end of the source gives black, not a hold; `MediaIn`'s
+  `HoldLastFrame` / `HoldFirstFrame` (frames) freeze it instead. The retime
+  endpoint sets them when the clip is too short.
+- **A Fusion clip flattens its members.** `CreateFusionClip([A, B])` opened
+  on the Fusion page shows ONE `MediaIn` ("Fusion Clip 1") spanning both, and
+  the item reports zero comps until one is added there; the two source clips
+  are not reachable inside, so it cannot host a cross dissolve. Dissolves are
+  built as an A/B overlap on two tracks instead (`POST .../items/{id}/dissolve`):
+  the incoming item re-created one track up starting early from its head
+  handles with a transparent-Background Merge ramping its Blend, or a tail
+  piece of the outgoing clip fading out above the cut.

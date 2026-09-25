@@ -32,7 +32,7 @@ Operation counts are from the live OpenAPI document (`GET /openapi.json`).
 | **Media pool** | 58 | bins (tree/create/move/delete/export/import .drb), clips by id or name anywhere (properties, metadata, colour, flags, markers, mark in/out), import files / image sequences / subclips, proxies, relink/unlink, replace, mattes, audio sync, stereo, selection, metadata CSV, Studio AI on clips and bins (transcribe, classify, deblur, IntelliSearch, slate) | yes (AI calls return 422 without the Extras) |
 | **Color** | 57 | versions, CDL, copy grades, LUT export, node graphs (clip / timeline / group pre+post: LUT, cache, enable, DRX, reset), colour groups, gallery albums and stills (import/export/label/delete), export frame, keyframe mode | yes |
 | **Timelines** | 43 | create / from-clips / import (AAF, EDL, XML, FCPXML, DRT, OTIO), settings, tracks (add/rename/lock/enable/delete), append at exact frames, **ripple-insert**, delete/link items, compound and Fusion clips, generators / titles / Fusion titles with text, playhead, mark in/out, markers, export (17 formats), duplicate/delete, stills, thumbnail (JSON or PNG), auto subtitles, scene cuts, voice isolation, Dolby Vision | yes (auto subtitles needs the speech model) |
-| **Timeline items** | 33 | list with 0-based frames, get/patch (name, enabled, colour, every Inspector property), delete (ripple), **relocate** (move/trim with linked A/V, keeps properties, markers, comps and grade when possible), **split**, flags, markers, linked, audio mapping, takes, stabilize, smart reframe, magic mask, caches, burn-in | yes |
+| **Timeline items** | 35 | list with 0-based frames, get/patch (name, enabled, colour, every Inspector property), delete (ripple), **relocate** (move/trim with linked A/V, keeps properties, markers, comps and grade when possible), **split**, **retime** (fit / ripple / reverse via a TimeSpeed in the clip's comp, edge holds), **dissolve** (A/B overlap one track up with an opacity ramp), flags, markers, linked, audio mapping, takes, stabilize, smart reframe, magic mask, caches, burn-in | yes - retime and dissolve read frame-exact on a numbered test clip (2026-09-25) |
 | **Render** | 29 | formats/codecs/resolutions, presets (list/load/save/delete/import/export), queue (preset/format/mode/settings), start/stop, **wait**, **SSE progress**, quick export, burn-in presets | yes |
 | **Projects** | 28 | list/create/open/rename/save/close/delete, settings, presets, project folders, import/export/archive/restore, databases, Fairlight presets, AI speech generation | yes (speech needs the Extras) |
 | **System** | 25 | health, info, constants, page switching, layout and preference presets, background tasks, quit (confirmed), Media Storage browsing and add-to-pool | yes (Media Storage lists only inside configured locations) |
@@ -51,8 +51,6 @@ Ordered by value to the standing goal ("Claude can do everything a human can in 
 | # | Item | Why it matters | Size |
 |---|---|---|---|
 | P2 | **Push** the 8 unpushed commits to github.com/thedumbstuff/dollygrip | GitHub is missing the Fusion depth, stock verification and the ABC example | XS - user action ("never push unless asked") |
-| P3 | **Retime** - Resolve exposes `RetimeProcess` but no speed setter | slow-mo / speed ramps are basic editing | M - composite via Fusion clip + TimeSpeed tool |
-| P4 | **Cross-dissolves between clips** - no transition API | stock b-roll cuts only | M - Fusion clip composite or a dissolve recipe over paired items |
 | P6 | **Recipe library** - vertical reel, podcast clip, dailies with burn-ins, music video | agents start from proven pipelines | S each |
 | P7 | **Progress for long AI analyses** (transcription, IntelliSearch) | today: fire and hope | M - heuristic watcher; Resolve gives no callbacks |
 | P8 | **LLM keyword extraction** step for stock b-roll (script -> search terms) | completes the MoneyPrinterTurbo loop end to end | S - recipe step calling a model |
@@ -63,7 +61,7 @@ Ordered by value to the standing goal ("Claude can do everything a human can in 
 | P13 | **Perturb / Follower modifiers** - no scripting constructor on Resolve 21 | organic wobble and per-character text animation without hand-built splines | S - paste a modifier `.setting` via the Lua paste path, then connect |
 | P14 | **Fusion live sequence in the release gate** - the paste / read / markers / history run (`live_fusion5.py`, scratchpad) | four freezes today were only caught live | S - fold into `scripts/live_smoke.py` |
 
-Closed 2026-09-24: P1 (stock providers live), P5 (Fusion macro import with overrides). Open follow-ups from the ABC v2 build: swap the Q (queen) clip for a child-friendly one, a render wait longer than 58 min for heavy comps (`/render/jobs/{id}/wait` caps at 3600 s per call; poll again). Dropped by decision: cloud projects (see §4).
+Closed 2026-09-24: P1 (stock providers live), P5 (Fusion macro import with overrides). Closed 2026-09-25: P3 retime (`POST .../items/{id}/retime`: fit / ripple / reverse, TimeSpeed with a solved Delay, live-verified on a frame-numbered clip), P4 cross dissolve (`POST .../items/{id}/dissolve`: A/B overlap one track up with a Fusion opacity ramp, before/after/centre on the cut, live-verified). Open follow-ups from the ABC v2 build: swap the Q (queen) clip for a child-friendly one, a render wait longer than 58 min for heavy comps (`/render/jobs/{id}/wait` caps at 3600 s per call; poll again). Dropped by decision: cloud projects (see §4).
 
 ## 4. Decisions made
 
@@ -98,14 +96,16 @@ Closed 2026-09-24: P1 (stock providers live), P5 (Fusion macro import with overr
 | 2026-09-25 | **Point inputs animate through an XYPath** in the keyframes endpoint; `[x, y]` values switch mode automatically | a BezierSpline attach on Center is a silent static write - v1's word slide-in never moved and v2's panels parked off-screen until this was found |
 | 2026-09-25 | **Frame QA before every render**: `export-frame` with `timecode` (Color page, 0.7 s settle) at a dozen moments, viewed as images | the Edit page exports black and an immediate export returns the previous position; three real defects were only visible in stills |
 | 2026-09-25 | Audio for a production is a **separate agent's job** from a shared `timing.json` (mastered song, synthesized SFX, TTS voice) while the comp builds | the Fusion build is serial on Resolve; audio is not |
+| 2026-09-25 | **Retime lives inside the clip's own Fusion comp** (TimeSpeed after MediaIn, Delay solved against the comp's global range), not in a Fusion clip | MediaIn spans the whole source clip, so handles are reachable; a Fusion clip flattens its members and loses them |
+| 2026-09-25 | **Dissolves are an A/B overlap one track up** with a transparent-Background Merge ramping Blend | there is no transition API and a Fusion clip cannot see both sources; the overlap keeps the timeline structure and later items untouched |
+| 2026-09-25 | Composite edits are verified on a **frame-numbered test clip** (ffmpeg testsrc + drawtext `%{n}`) and read back from stills | the only way to prove a retime or dissolve is frame-exact |
 
 ## 5. Development required
 
 Concrete work, with the file it lands in.
 
 **Gateway**
-- Retime composite: `routers/items.py` `retime` op (Fusion clip + `TimeSpeed`), fake support, gotcha entry (P3).
-- Dissolve composite for two adjacent items: `routers/items.py` or a recipe (P4).
+- Audio for retime / dissolve: the linked audio item is left alone (no speed change, no crossfade) - add an audio-aware mode once Fairlight exposes something usable.
 - Stock: `keywords_from_script` step (LLM call behind an env-selected provider) and an `ai` provider adapter in `stock.py` (P8, P9).
 - Optional: analysis watcher for `transcribe_*` / `intellisearch_*` (P7).
 
@@ -124,7 +124,7 @@ Concrete work, with the file it lands in.
 - Recipe library folder `recipes/` with the four templates (P6).
 
 **Release**
-- Bump to 0.6.0 when P3 (retime) lands - P1 is closed; push (P2) is the user's call.
+- Bump to 0.6.0 now that retime and dissolve have landed; push (P2) is the user's call.
 
 ## 6. Known traps (pointer)
 
