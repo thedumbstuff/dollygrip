@@ -314,3 +314,25 @@ can; the rest you need to know when you reach for `/exec` or extend the API.
 - **`fusion.GetRegSummary()`** is a dict of 1279 entries keyed by index with
   `REGS_ID`, `REGS_Name`, `REGI_ClassType` - no category. `GetRegList(CT_Modifier)`
   entries have no `GetID` method from scripting.
+- **Point inputs do not take a BezierSpline.** `tool.Center = comp.BezierSpline()`
+  fails silently on Center / Pivot / mask Center; the keyframe fallback then
+  wrote each key as a static value and the LAST key won (v2 ABC build: every
+  panel parked off-screen, no slide-ins, swipe wipes invisible - the v1 word
+  "slide-in" had never moved either). Fusion animates points with an
+  **XYPath** modifier (`tool.Center = comp.XYPath()` creates `XYPath1` plus
+  `XYPath1X` / `XYPath1Y` BezierSplines); key those two splines. The keyframes
+  endpoint now does this for `[x, y]` values (`mode: "xypath"`), parking the
+  static value and comp time on the first key as for splines.
+- **A `Vertical` gradient Background with alpha 0 -> 0.85 darkened the whole
+  frame**, not just the bottom band (live, v2 ABC build; the v1 render had
+  the same cast). For a caption band use a Background with a soft-edged
+  RectangleMask instead.
+- **Translucent Backgrounds must be premultiplied.** A Merge treats its
+  foreground as premultiplied, so a Background with colour (1, 0.45, 0.45)
+  and alpha 0.22 composites as near-white; set the colour to rgb * alpha.
+- **`ExportCurrentFrameAsStill` exports BLACK from the Edit page** for a Fusion
+  title that has not been played; the Color page renders it. `POST
+  /color/export-frame` now switches to Color (and back) and takes a `timecode`.
+- **Fusion expression `time` is in FRAMES.** `sin(time/5)` is a 31-frame
+  period, `(time/9) % 1.3` sweeps 30x faster than intended; write `(time/30)`
+  for seconds at 30 fps. `%`, `fmod`, `floor`, `abs` all work in expressions.

@@ -574,6 +574,8 @@ class FakeSpline:
             target.clear()
         for frame, val in keys.items():
             target[int(frame) if float(frame).is_integer() else frame] = val[1] if isinstance(val, dict) and set(val) == {1} else val
+        if hasattr(self.tool, "_sync"):
+            self.tool._sync()
         return True
 
     def GetTool(self):
@@ -598,6 +600,21 @@ class FakeModifier(FakeSpline):
         super().__init__()
         self.kind = kind
         self.inputs = {}
+        self.keyframes = {}
+        self.splines = {}
+        self.host = None
+        if kind == "XYPath":  # real Fusion creates XYPath1X / XYPath1Y BezierSplines on attach
+            for axis in ("X", "Y"):
+                self.splines[axis] = FakeSpline(self, axis)
+                object.__setattr__(self, axis, FakeInput(self, axis))
+
+    def _sync(self):
+        """Mirror the X/Y keys into host.keyframes[input] as {frame: {1: x, 2: y}}."""
+        if self.host is None or self.kind != "XYPath":
+            return
+        host, name = self.host
+        xs, ys = self.keyframes.get("X", {}), self.keyframes.get("Y", {})
+        host.keyframes[name] = {f: {1: xs.get(f), 2: ys.get(f)} for f in sorted(set(xs) | set(ys))}
 
     @property
     def ID(self):
@@ -744,7 +761,10 @@ class FakeTool:
 
     def __setattr__(self, name, value):
         if isinstance(value, FakeSpline):  # `tool.Input = comp.BezierSpline()` / comp.Shake() attaches the modifier
-            value.tool, value.name = self, name
+            if isinstance(value, FakeModifier):
+                value.host = (self, name)
+            else:
+                value.tool, value.name = self, name
             self.splines[name] = value
             return
         object.__setattr__(self, name, value)

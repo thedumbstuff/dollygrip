@@ -64,7 +64,7 @@ def _set_inputs(tool, inputs: dict, frame: Optional[int] = None) -> dict:
     return results
 
 
-SAFE_DRIVERS = ("BezierSpline", "PolyPath")  # GetInput on these evaluates fine
+SAFE_DRIVERS = ("BezierSpline", "PolyPath", "XYPath")  # GetInput on these evaluates fine (XYPath = two splines)
 
 
 def input_driver(inp):
@@ -317,12 +317,45 @@ def connect_tool_input(item_id: str, comp: str, tool: str, body: ConnectInput, b
     return {"ok": True}
 
 
+def _is_point(keys: dict) -> bool:
+    return bool(keys) and all(isinstance(v, dict) and 1 in v and 2 in v for v in keys.values())
+
+
+def _animate_point(comp, tool, input_name: str, keys: dict, replace: bool) -> dict:
+    """Point inputs (Center, Pivot, mask Center ...) cannot take a BezierSpline:
+    the attach fails silently and every "key" becomes a static write, the last
+    one winning (live: panels parked off-screen, no slide-ins). Fusion animates
+    points with an XYPath modifier whose X and Y are BezierSplines."""
+    inp = getattr(tool, input_name)
+    out = safe(inp.GetConnectedOutput)
+    driver = safe(out.GetTool) if out else None
+    if driver is None or safe(lambda: driver.ID) != "XYPath":
+        first_frame = min(keys)
+        safe(tool.SetInput, input_name, {1: keys[first_frame][1], 2: keys[first_frame][2]})
+        safe(comp.SetAttrs, {"COMPN_CurrentTime": first_frame})
+        setattr(tool, input_name, comp.XYPath())
+        out = safe(getattr(tool, input_name).GetConnectedOutput)
+        driver = safe(out.GetTool) if out else None
+    if driver is None:
+        raise Rejected(f"Could not attach an XYPath to {input_name}")
+    xs = safe(lambda: driver.X.GetConnectedOutput().GetTool())
+    ys = safe(lambda: driver.Y.GetConnectedOutput().GetTool())
+    if xs is None or ys is None:
+        raise Rejected(f"XYPath on {input_name} has no X/Y splines")
+    xs.SetKeyFrames({f: {1: v[1]} for f, v in keys.items()}, replace)
+    ys.SetKeyFrames({f: {1: v[2]} for f, v in keys.items()}, replace)
+    return {"mode": "xypath", "keys": len(keys), "driver": safe(lambda: driver.Name)}
+
+
 def animate_input(comp, tool, input_name: str, keyframes: dict, replace: bool = True) -> dict:
     """Keyframe `tool.<input>` properly. A bare `tool.Input[frame] = value`
     writes a STATIC value unless a spline is attached, and attaching one adds a
     stray key at the comp's current time - so: attach a BezierSpline if the
-    input is not animated, then set all keys wholesale with SetKeyFrames."""
+    input is not animated, then set all keys wholesale with SetKeyFrames.
+    Point values ([x, y]) go through an XYPath modifier instead."""
     keys = {float(frame): (value if isinstance(value, dict) else {1: value}) for frame, value in keyframes.items()}
+    if _is_point(keys):
+        return _animate_point(comp, tool, input_name, keys, replace)
     inp = getattr(tool, input_name)
     out = safe(inp.GetConnectedOutput)
     if out is None:
@@ -358,7 +391,10 @@ def set_tool_keyframes(item_id: str, comp: str, tool: str, body: ToolKeyframes, 
         info = animate_input(c, t, body.input, {kf.frame: _fusion_value(kf.value) for kf in body.keyframes}, body.replace)
     except Exception as e:
         raise Rejected(f"Could not keyframe {tool}.{body.input}: {type(e).__name__}: {e}") from e
-    values = {kf.frame: jsonable(safe(t.GetInput, body.input, kf.frame)) for kf in body.keyframes}
+    if info.get("mode") == "xypath":
+        values = {kf.frame: kf.value for kf in body.keyframes}  # never GetInput a modifier-driven input
+    else:
+        values = {kf.frame: jsonable(safe(t.GetInput, body.input, kf.frame)) for kf in body.keyframes}
     return {"ok": True, **info, "values_at_keys": values, "all_ok": True, "results": [{"frame": kf.frame, "ok": True} for kf in body.keyframes]}
 
 

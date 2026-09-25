@@ -45,8 +45,12 @@ def test_tools_inputs_connect_keyframes(client, timeline):
     assert comp.tools["Template"].inputs["Size"] == 0.05 and comp.attrs["COMPN_CurrentTime"] == 0.0  # static value + comp time parked on the first key before attaching
     r = client.post(f"{F}/items/{iid}/comps/1/tools/Template/keyframes", json={"input": "Size", "keyframes": [{"frame": 48, "value": 0.3}], "replace": False})
     assert comp.tools["Template"].keyframes["Size"] == {0: 0.05, 24: 0.12, 48: 0.3}
-    r = client.post(f"{F}/items/{iid}/comps/1/tools/Template/keyframes", json={"input": "Center", "keyframes": [{"frame": 0, "value": [0.5, 0.2]}]})
-    assert comp.tools["Template"].keyframes["Center"] == {0: {1: 0.5, 2: 0.2}}
+    r = client.post(f"{F}/items/{iid}/comps/1/tools/Template/keyframes", json={"input": "Center", "keyframes": [{"frame": 0, "value": [0.5, 0.2]}, {"frame": 12, "value": [0.7, 0.2]}]})
+    assert r.json()["mode"] == "xypath" and r.json()["values_at_keys"] == {"0": [0.5, 0.2], "12": [0.7, 0.2]}
+    assert comp.tools["Template"].keyframes["Center"] == {0: {1: 0.5, 2: 0.2}, 12: {1: 0.7, 2: 0.2}}
+    assert comp.tools["Template"].splines["Center"].kind == "XYPath"  # points animate through an XYPath, not a BezierSpline
+    r = client.post(f"{F}/items/{iid}/comps/1/tools/Template/keyframes", json={"input": "Center", "keyframes": [{"frame": 24, "value": [0.9, 0.5]}]})
+    assert r.json()["mode"] == "xypath" and comp.tools["Template"].keyframes["Center"] == {24: {1: 0.9, 2: 0.5}}  # replace on the existing XYPath
     assert client.patch(f"{F}/items/{iid}/comps/1/tools/Template/inputs", json={"inputs": {"Size": 0.2}, "frame": 48}).json()["results"] == {"Size": True}
     assert comp.tools["Template"].keyframes["Size"][48] == 0.2
     assert client.delete(f"{F}/items/{iid}/comps/1/tools/BG").json()["ok"] and "BG" not in comp.tools

@@ -352,9 +352,22 @@ def _pick(stills: list, indices):
 
 @router.post("/export-frame")
 def export_current_frame(body: ExportFrame, bridge: ResolveBridge = Depends(resolve_session)):
-    """Export the frame under the playhead as an image (path extension picks the format)."""
-    require(bridge.current_project().ExportCurrentFrameAsStill(body.path), f"Resolve refused to export a still to {body.path!r}")
-    return {"ok": True, "path": body.path}
+    """Export the frame under the playhead as an image (path extension picks the
+    format). Optionally moves the playhead to `timecode` first. Exports from the
+    Color page by default (live: the Edit page viewer exports BLACK for a
+    Fusion title that has not been played) and returns to the page you were on."""
+    resolve = bridge.ensure()
+    before = safe(resolve.GetCurrentPage)
+    if body.page and before != body.page:
+        require(resolve.OpenPage(body.page), f"Could not open the {body.page} page")
+    try:
+        if body.timecode:
+            require(bridge.current_timeline().SetCurrentTimecode(body.timecode), f"Resolve refused timecode {body.timecode!r}")
+        require(bridge.current_project().ExportCurrentFrameAsStill(body.path), f"Resolve refused to export a still to {body.path!r}")
+    finally:
+        if body.page and before and before != body.page:
+            safe(resolve.OpenPage, before)
+    return {"ok": True, "path": body.path, "timecode": safe(bridge.current_timeline().GetCurrentTimecode), "page": body.page or before}
 
 
 @router.get("/keyframe-mode")

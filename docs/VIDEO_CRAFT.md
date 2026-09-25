@@ -169,3 +169,21 @@ node-based colour grading, reading a grade back. Work around with Fusion
 comps (fades, motion), ffmpeg-prepared audio stems, DRX/LUT application
 (`apply_drx_clip`, `set_node_lut_clip`) and CDL. Tell the user when a request
 lands in this list and offer the workaround.
+
+
+## Motion vocabulary that reads as animation (learned on the ABC v2 build)
+
+- Points move through `set_tool_keyframes` with `[x, y]` values: the gateway
+  attaches an XYPath for you. Give every entrance a settle: overshoot,
+  undershoot, rest (e.g. Size 0.02 -> 1.28x -> 0.88x -> 1.06x -> 1.0 over 18
+  frames); a plain linear pop looks mechanical to a child.
+- Continuous life comes from expressions, in SECONDS: `sin(6.2832*(time/30)/P)`
+  for a bob or wiggle, `((time/30)/P + offset) % 1.3 - 0.15` for a looping
+  drift (confetti, notes, candy stripes), `abs(sin(...))` for hops.
+- Reuse tools across many events: six burst stars with all 40 bursts in one
+  keyframe list each, two swipe rectangles for 23 cuts (hold off-screen with a
+  key one frame before each cut).
+- Translucent shapes: premultiply the colour; caption bands: a soft-edged
+  masked rectangle, never a full-frame vertical gradient.
+- QA with `export_current_frame` at a dozen moments before rendering; it now
+  takes a `timecode` and renders from the Color page.
