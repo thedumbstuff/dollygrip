@@ -205,3 +205,5 @@ lands in this list and offer the workaround.
 - Prove both on stills (`export_current_frame` at the cut and mid-transition):
   the retime endpoint solves the TimeSpeed delay exactly, but a wrong-speed
   result is invisible without checking a frame.
+
+- Stock b-roll from a script: `stock_keywords` (or `b-roll` with `script`) turns the voiceover text into 1-3 search terms per sentence; check the terms it picked before assembling, and override any that are too generic.

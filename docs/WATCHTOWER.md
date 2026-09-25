@@ -51,17 +51,14 @@ Ordered by value to the standing goal ("Claude can do everything a human can in 
 | # | Item | Why it matters | Size |
 |---|---|---|---|
 | P2 | **Push** the 8 unpushed commits to github.com/thedumbstuff/dollygrip | GitHub is missing the Fusion depth, stock verification and the ABC example | XS - user action ("never push unless asked") |
-| P6 | **Recipe library** - vertical reel, podcast clip, dailies with burn-ins, music video | agents start from proven pipelines | S each |
 | P7 | **Progress for long AI analyses** (transcription, IntelliSearch) | today: fire and hope | M - heuristic watcher; Resolve gives no callbacks |
-| P8 | **LLM keyword extraction** step for stock b-roll (script -> search terms) | completes the MoneyPrinterTurbo loop end to end | S - recipe step calling a model |
 | P9 | **AI-generated shots as a stock provider** | when stock has nothing | M |
 | P10 | **v2 contract pass** - uniform `{ok, data}` envelopes | cleanliness; v1 stays frozen | M |
-| P11 | Web dashboard on `/` - landing + rendered docs shipped 2026-09-24; still to do: live render-queue and job progress panel | nice-to-have | S |
 | P12 | Multi-machine / render node fleet | someday | L |
 | P13 | **Perturb / Follower modifiers** - no scripting constructor on Resolve 21 | organic wobble and per-character text animation without hand-built splines | S - paste a modifier `.setting` via the Lua paste path, then connect |
 | P14 | **Fusion live sequence in the release gate** - the paste / read / markers / history run (`live_fusion5.py`, scratchpad) | four freezes today were only caught live | S - fold into `scripts/live_smoke.py` |
 
-Closed 2026-09-24: P1 (stock providers live), P5 (Fusion macro import with overrides). Closed 2026-09-25: P3 retime (`POST .../items/{id}/retime`: fit / ripple / reverse, TimeSpeed with a solved Delay, live-verified on a frame-numbered clip), P4 cross dissolve (`POST .../items/{id}/dissolve`: A/B overlap one track up with a Fusion opacity ramp, before/after/centre on the cut, live-verified). Open follow-ups from the ABC v2 build: swap the Q (queen) clip for a child-friendly one, a render wait longer than 58 min for heavy comps (`/render/jobs/{id}/wait` caps at 3600 s per call; poll again). Dropped by decision: cloud projects (see §4).
+Closed 2026-09-24: P1 (stock providers live), P5 (Fusion macro import with overrides). Closed 2026-09-25: P6 recipe library (`recipes/`, dry-run validated, `--input` overrides; gaps listed in `recipes/README.md`: no subtitle-file import, no append-a-bin, burn-in render keys unverified live, no black-clip generator), P8 script keywords (`POST /stock/keywords`, heuristic + optional LLM providers, `b-roll` takes `script`), P11 live render-queue panel on `/` (polling + SSE, token via `?token=`, not yet opened in a browser against a live render), P3 retime (`POST .../items/{id}/retime`: fit / ripple / reverse, TimeSpeed with a solved Delay, live-verified on a frame-numbered clip), P4 cross dissolve (`POST .../items/{id}/dissolve`: A/B overlap one track up with a Fusion opacity ramp, before/after/centre on the cut, live-verified). Open follow-ups from the ABC v2 build: swap the Q (queen) clip for a child-friendly one, a render wait longer than 58 min for heavy comps (`/render/jobs/{id}/wait` caps at 3600 s per call; poll again). Dropped by decision: cloud projects (see §4).
 
 ## 4. Decisions made
 
@@ -106,8 +103,10 @@ Concrete work, with the file it lands in.
 
 **Gateway**
 - Audio for retime / dissolve: the linked audio item is left alone (no speed change, no crossfade) - add an audio-aware mode once Fairlight exposes something usable.
-- Stock: `keywords_from_script` step (LLM call behind an env-selected provider) and an `ai` provider adapter in `stock.py` (P8, P9).
+- Stock: an `ai` provider adapter in `stock.py` for generated shots (P9); the keywords step shipped (P8).
 - Optional: analysis watcher for `transcribe_*` / `intellisearch_*` (P7).
+- Recipe gaps worth closing as endpoints: subtitle-file (SRT) import, append every clip in a bin, a black carrier clip of a given length (today a file the user supplies).
+- Open the landing page's render panel in a real browser during a live render once (it was verified with a node harness only).
 
 **Fusion follow-ups**
 - Perturb / Follower via pasted modifier settings + connect (P13); Text+ follower presets from `Fusion/Styled Text` could cover most needs.
@@ -121,7 +120,6 @@ Concrete work, with the file it lands in.
 
 **Docs**
 - `examples/` index in README (nine entries now, only three linked).
-- Recipe library folder `recipes/` with the four templates (P6).
 
 **Release**
 - 0.6.0 tagged locally 2026-09-25 (retime, dissolve, recipe library, render panel, keywords); push (P2) is the user's call.
