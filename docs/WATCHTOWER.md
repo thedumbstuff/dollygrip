@@ -5,8 +5,8 @@ against a real Resolve, what is pending, what was decided and why, and what
 development is required next. Update it in the same commit as the change it
 describes. Agents get it as the MCP resource `dollygrip://watchtower`.
 
-_Last updated: 2026-09-25 · version 0.5.0 · 47 commits (12 ahead of GitHub) · 164 tests green ·
-333 operations · verified on DaVinci Resolve Studio 21.0.4.5 (Windows 11)_
+_Last updated: 2026-09-25 · version 0.6.0 · 50 commits (7 ahead of GitHub) · 191 tests green ·
+336 operations · verified on DaVinci Resolve Studio 21.0.4.5 (Windows 11)_
 
 ---
 
@@ -37,8 +37,8 @@ Operation counts are from the live OpenAPI document (`GET /openapi.json`).
 | **Projects** | 28 | list/create/open/rename/save/close/delete, settings, presets, project folders, import/export/archive/restore, databases, Fairlight presets, AI speech generation | yes (speech needs the Extras) |
 | **System** | 25 | health, info, constants, page switching, layout and preference presets, background tasks, quit (confirmed), Media Storage browsing and add-to-pool | yes (Media Storage lists only inside configured locations) |
 | **Fusion** | 50 | comps (list/add/import/rename/load/export/delete, **attrs** incl. comp time / render range / HiQ, **undo groups**, save), tools (list with type filter, add/get/rename/bypass/**lock/tile colour/flow position**/delete, **duplicate**, **preset save/load**), **input discovery** with control type, range, default, page, set inputs, **expressions**, connect, **node graph** (edges + positions), **keyframes** (set / read back / clear), **modifiers** (Shake, Path, XYPath, Calculation, Offset, Expression, Probe, KeyStretcher), **paste macros / `.setting` templates with per-tool overrides**, `text-plus` helper (+ shadow/outline/tracking), current comp on the Fusion page, **template discovery** (Titles/Generators/Effects/Transitions + Fusion-page presets, folders and `.drfx`), **font list**, comp **markers**, **active tool**, **undo/redo history**, **key-time navigation**, **selection**, **disconnect**, **outputs**, **tool registry**, **reset input**, multi-line Text+ | yes - all 50 live-verified on 2026-09-24 (template paste on fresh comps, particle preset, duplicate, markers, history, key times, selection, outputs, registry); four Resolve freezes bisected to `GetInput` on modifier-driven inputs, now guarded |
-| **Stock** | 6 | Pexels / Pixabay / Coverr search with aspect, duration and rendition filters, 24 h cache, key rotation; shot planner (script order or random, unique sources first, loop to cover the voiceover); Resolve-native assemble with source-fps conversion and fill/fit; one-call `b-roll` | yes - all three providers searched live 2026-09-24; plan + download and a 26-clip assemble verified (ABC Song) |
-| **Recipes** | 2 | `POST /recipes/run` and `dollygrip run`: ordered steps of any operation with `{{ steps.name.path }}` templating, dry-run, stop-on-error; `GET /recipes/operations` | yes |
+| **Stock** | 7 | Pexels / Pixabay / Coverr search with aspect, duration and rendition filters, 24 h cache, key rotation; shot planner (script order or random, unique sources first, loop to cover the voiceover); Resolve-native assemble with source-fps conversion and fill/fit; one-call `b-roll` | yes - all three providers searched live 2026-09-24; plan + download and a 26-clip assemble verified (ABC Song) |
+| **Recipes** | 2 (+ a library of 4 in ) | `POST /recipes/run` and `dollygrip run`: ordered steps of any operation with `{{ steps.name.path }}` templating, dry-run, stop-on-error; `GET /recipes/operations` | yes |
 | **Tools** | 1 | timecode <-> frames, drop-frame aware | yes |
 | **Exec** | 1 | raw Python against the live scripting objects (`--allow-exec` only) | yes |
 
@@ -124,7 +124,7 @@ Concrete work, with the file it lands in.
 - Recipe library folder `recipes/` with the four templates (P6).
 
 **Release**
-- Bump to 0.6.0 now that retime and dissolve have landed; push (P2) is the user's call.
+- 0.6.0 tagged locally 2026-09-25 (retime, dissolve, recipe library, render panel, keywords); push (P2) is the user's call.
 
 ## 6. Known traps (pointer)
 
